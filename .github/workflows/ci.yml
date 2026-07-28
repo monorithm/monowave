@@ -1,0 +1,199 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.44.8"
+
+jobs:
+  # The host suite runs on all three desktop OSes rather than just ubuntu.
+  # The probe test asserts exact min/max values, so running it everywhere is the
+  # determinism check in miniature -- and it is what proves Linux and Windows
+  # compile at all, which cannot be checked from a Mac.
+  package:
+    name: Package · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - run: flutter config --enable-native-assets
+      - run: flutter pub get
+
+      # Includes the determinism digests: the same C source must reduce to
+      # byte-identical peaks on every OS, or the one-core bet is not paying off.
+      - name: Run tests
+        run: dart test
+
+      # Only once -- lint and format results do not vary by OS.
+      - name: Verify formatting
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          files=$(git ls-files '*.dart' | grep -v '\.g\.dart$')
+          dart format --output=none --set-exit-if-changed $files
+
+      - name: Analyze
+        if: matrix.os == 'ubuntu-latest'
+        run: flutter analyze
+
+      # Headless is the organizing constraint, so it is enforced rather than
+      # documented. See docs/architecture.md.
+      - name: Verify the package is headless
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          if git grep -lE "package:flutter/(widgets|material|cupertino)\.dart" -- lib/; then
+            echo "::error::monowave must not import Flutter's widget layer. The host writes the painter."
+            exit 1
+          fi
+
+  android:
+    name: Android · build example
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter config --enable-native-assets
+      - name: Build the example
+        working-directory: example
+        run: flutter build apk --debug
+      # A green build is not proof the code asset was bundled. Assert the
+      # library is actually inside the APK, for every ABI.
+      - name: Verify the code asset is bundled
+        working-directory: example
+        run: |
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            unzip -l build/app/outputs/flutter-apk/app-debug.apk \
+              | grep -q "lib/$abi/libmonowave.so" \
+              || { echo "::error::libmonowave.so missing for $abi"; exit 1; }
+          done
+
+  apple:
+    name: Apple · build example
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter config --enable-native-assets
+      - name: Build for iOS
+        working-directory: example
+        run: flutter build ios --debug --simulator --no-codesign
+      - name: Build for macOS
+        working-directory: example
+        run: flutter build macos --debug
+      - name: Verify the code asset is bundled
+        working-directory: example
+        run: |
+          test -f build/ios/iphonesimulator/Runner.app/Frameworks/monowave.framework/monowave \
+            || { echo "::error::monowave.framework missing from the iOS bundle"; exit 1; }
+
+  desktop:
+    name: Desktop · build example
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux
+          - os: windows-latest
+            target: windows
+    steps:
+      - uses: actions/checkout@v5
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Install Linux build dependencies
+        if: matrix.target == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgtk-3-dev
+      - run: flutter config --enable-native-assets
+      - name: Build the example
+        working-directory: example
+        run: flutter build ${{ matrix.target }} --debug
+
+  web:
+    name: Web · build example
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter config --enable-native-assets
+
+      # The committed artifact must not drift from `src/`. Rebuilding and
+      # diffing is the check.
+      #
+      # This requires the pinned emscripten here to match the one that produced
+      # the committed artifact (6.0.4). A version bump will change the output
+      # bytes; when that happens, rebuild locally, commit the new artifact, and
+      # bump EMSDK_VERSION in the same commit.
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 6.0.4
+      - name: Rebuild the WASM core and check it matches what is committed
+        run: |
+          ./tool/build_wasm.sh
+          if ! git diff --quiet -- assets/monowave.wasm; then
+            echo "::error::assets/monowave.wasm is stale. Run ./tool/build_wasm.sh and commit the result."
+            exit 1
+          fi
+
+      # The cross-binding half of the determinism claim, and the single most
+      # important assertion in this workflow: the same C source, reached over
+      # `dart:ffi` natively and over WASM here, must produce identical peaks.
+      # The expected digests live in both test/decode_test.dart and this script.
+      - name: Verify the WASM build decodes identically to the native build
+        run: |
+          dart run tool/dump_fixtures.dart build/fixtures
+          node tool/verify_wasm.mjs
+
+      # Compiling for web is itself the assertion that the platform seam keeps
+      # `dart:ffi` out of the web build.
+      - name: Build the example
+        working-directory: example
+        run: flutter build web
+
+      # UNPROVEN: the chrome platform runner hangs with no output locally, so
+      # this has never actually run. It is not the gate — the node check above
+      # proves the same property reliably — so a failure here is informational
+      # until someone works out whether it is a local problem or a real one.
+      - name: Run the WASM binding in a browser
+        continue-on-error: true
+        working-directory: example
+        run: flutter test --platform chrome test/web_wasm_test.dart

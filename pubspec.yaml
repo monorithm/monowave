@@ -1,0 +1,50 @@
+name: monowave
+description: "Headless audio capture, waveform peaks, and non-destructive editing for Flutter — one C core across all six Flutter targets."
+version: 0.2.0
+homepage: https://github.com/monorithm/monowave
+repository: https://github.com/monorithm/monowave
+topics:
+  - audio
+  - waveform
+  - ffi
+  - media
+
+environment:
+  sdk: ^3.12.2
+  flutter: ">=3.35.0"
+
+dependencies:
+  # The build-hook trio. These are runtime dependencies rather than dev
+  # dependencies because `hook/build.dart` runs during a *consumer's* build,
+  # and dev dependencies are not resolved for consumers.
+  # Upper bounds are load-bearing, not caution. `hooks 2.1.0` and
+  # `native_toolchain_c 0.19.3` moved to `meta ^1.19.0`; Flutter stable pins
+  # `meta 1.18.0`, so those versions cannot resolve here at all. Bounded
+  # explicitly rather than left to backtracking, which takes minutes against a
+  # graph this size. Raise both ceilings when Flutter's pinned meta catches up.
+  code_assets: ^1.2.1
+  ffi: ^2.1.4
+  flutter:
+    sdk: flutter
+  hooks: ">=2.0.2 <2.1.0"
+  native_toolchain_c: ">=0.19.0 <0.19.3"
+
+dev_dependencies:
+  ffigen: ^21.0.0
+  flutter_lints: ^6.0.0
+  # `package:test`, not `flutter_test`. A headless package has nothing to bind a
+  # widget tree for, and flutter_test pins `meta 1.18.0` from the SDK, which
+  # collides with native_toolchain_c's `meta ^1.19.0`. Pure-Dart tests are also
+  # what let the engine suite run under `dart test` in seconds.
+  test: ^1.25.15
+
+# No `flutter: plugin:` block. monowave has no platform plugin classes — the
+# native side is a code asset built by `hook/build.dart` and reached over FFI,
+# not a registered plugin reached over a method channel. See docs/architecture.md.
+flutter:
+  assets:
+    # The web binding's half of the C core, built by `tool/build_wasm.sh` and
+    # committed. Bundled on every platform because Flutter cannot scope an asset
+    # to one target; it is the price of not requiring emscripten in a consumer's
+    # build, and it is a few KB.
+    - assets/monowave.wasm
