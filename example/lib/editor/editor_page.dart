@@ -4,6 +4,7 @@ import 'package:monokit/monokit.dart';
 import 'package:monowave/monowave.dart';
 
 import '../ui/wave_chrome.dart';
+import '../ui/wave_icons.dart';
 import 'editor_controller.dart';
 import 'waveform_canvas.dart';
 
@@ -120,7 +121,8 @@ class _EditorPageState extends State<EditorPage> {
     );
   }
 
-  /// Floating over the canvas: leave, undo, discard, finish.
+  /// Floating over the canvas, in monolens's order: leave on the left, history
+  /// and the commit on the right.
   Widget _header(MonokitThemeData theme) => Padding(
     padding: EdgeInsets.symmetric(
       horizontal: theme.spacing.md,
@@ -129,29 +131,7 @@ class _EditorPageState extends State<EditorPage> {
     child: Row(
       children: <Widget>[
         WaveChromeButton(
-          diameter: 40,
-          semanticLabel: 'Back',
-          onPressed: () => Navigator.of(context).pop(),
-          child: MonoIcon(
-            MonoIcons.chevronLeft,
-            size: 18,
-            color: theme.colors.onMedia,
-          ),
-        ),
-        const Spacer(),
-        WaveChromeButton(
-          diameter: 40,
-          semanticLabel: 'Undo',
-          onPressed: _controller.canUndo ? _controller.undo : null,
-          child: MonoIcon(
-            MonoIcons.arrowRight,
-            size: 18,
-            color: theme.colors.onMedia,
-          ),
-        ),
-        SizedBox(width: theme.spacing.sm),
-        WaveChromeButton(
-          diameter: 40,
+          diameter: 44,
           tone: _armed ? WaveTone.live : WaveTone.neutral,
           semanticLabel: _armed ? 'Tap again to discard' : 'Discard',
           onPressed: _discard,
@@ -161,12 +141,34 @@ class _EditorPageState extends State<EditorPage> {
             color: _armed ? theme.colors.onLive : theme.colors.onMedia,
           ),
         ),
+        const Spacer(),
+        WaveChromeButton(
+          diameter: 40,
+          semanticLabel: 'Undo',
+          onPressed: _controller.canUndo ? _controller.undo : null,
+          child: WaveIcon(
+            WaveGlyph.undo,
+            size: 18,
+            color: theme.colors.onMedia,
+          ),
+        ),
+        SizedBox(width: theme.spacing.sm),
+        WaveChromeButton(
+          diameter: 40,
+          semanticLabel: 'Redo',
+          onPressed: _controller.canRedo ? _controller.redo : null,
+          child: WaveIcon(
+            WaveGlyph.redo,
+            size: 18,
+            color: theme.colors.onMedia,
+          ),
+        ),
         SizedBox(width: theme.spacing.md),
         MonoButton(
           size: MonoButtonSize.sm,
           isLoading: _controller.isPreparing,
           onPressed: _controller.isPreparing ? null : _export,
-          child: const Text('Save'),
+          child: const Text('Done'),
         ),
       ],
     ),

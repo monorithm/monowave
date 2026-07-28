@@ -67,6 +67,7 @@ class EditorController extends ChangeNotifier {
   Duration get duration => timeline.duration;
 
   bool get canUndo => history.canUndo;
+  bool get canRedo => history.canRedo;
   bool get hasSelection => selection != null && !selection!.isEmpty;
 
   void select(WaveformSelection? next) {
@@ -181,6 +182,11 @@ class EditorController extends ChangeNotifier {
 
   void undo() {
     history.undo();
+    _invalidate();
+  }
+
+  void redo() {
+    history.redo();
     _invalidate();
   }
 
