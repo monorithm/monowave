@@ -23,7 +23,25 @@ class EditorPage extends StatefulWidget {
   State<EditorPage> createState() => _EditorPageState();
 }
 
+/// The tools on the rail. Modes, not actions.
+enum _Tool { play, trim, fade }
+
+extension on _Tool {
+  String get label => switch (this) {
+    _Tool.play => 'Play',
+    _Tool.trim => 'Trim',
+    _Tool.fade => 'Fade',
+  };
+
+  MonoIconData get glyph => switch (this) {
+    _Tool.play => MonoIcons.play,
+    _Tool.trim => MonoIcons.filter,
+    _Tool.fade => MonoIcons.sparkles,
+  };
+}
+
 class _EditorPageState extends State<EditorPage> {
+  _Tool _active = _Tool.play;
   late final EditorController _controller = EditorController(
     source: widget.source,
     peaks: widget.peaks,
@@ -154,44 +172,112 @@ class _EditorPageState extends State<EditorPage> {
     ),
   );
 
-  /// The bottom bar: transport always, trim only when there is a selection.
-  Widget _chrome(MonokitThemeData theme) {
+  /// The bottom bar: an error, the tray for the active tool, then the rail.
+  Widget _chrome(MonokitThemeData theme) => Container(
+    decoration: BoxDecoration(
+      color: theme.colors.page,
+      border: Border(top: BorderSide(color: theme.colors.separator)),
+    ),
+    child: SafeArea(
+      top: false,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (_controller.error != null)
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                theme.spacing.lg,
+                theme.spacing.md,
+                theme.spacing.lg,
+                0,
+              ),
+              child: MonoAlert(
+                variant: MonoAlertVariant.destructive,
+                title: const Text('Export failed'),
+                description: Text(_controller.error!),
+              ),
+            ),
+          WaveTray(slot: _active, child: _tray(theme)),
+          WaveRail<_Tool>(
+            value: _active,
+            onChanged: (tool) => setState(() => _active = tool),
+            items: <WaveRailItem<_Tool>>[
+              for (final tool in _Tool.values)
+                WaveRailItem<_Tool>(
+                  value: tool,
+                  label: tool.label,
+                  icon: (color) => MonoIcon(tool.glyph, size: 21, color: color),
+                ),
+            ],
+          ),
+        ],
+      ),
+    ),
+  );
+
+  /// The panel for the active tool.
+  Widget _tray(MonokitThemeData theme) {
     final selection = _controller.selection;
 
-    return MonoSurface(
+    return Padding(
       padding: EdgeInsets.fromLTRB(
         theme.spacing.lg,
         theme.spacing.md,
         theme.spacing.lg,
-        theme.spacing.lg + MediaQuery.paddingOf(context).bottom,
+        theme.spacing.md,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          _Transport(controller: _controller),
-          AnimatedSize(
-            duration: theme.motion.reduced(context, theme.motion.fast),
-            curve: theme.motion.standard,
-            alignment: Alignment.topCenter,
-            child: _controller.hasSelection
-                ? Padding(
-                    padding: EdgeInsets.only(top: theme.spacing.md),
-                    child: _TrimBar(
-                      controller: _controller,
-                      selection: selection!,
+      child: switch (_active) {
+        _Tool.play => _Transport(controller: _controller),
+        _Tool.trim =>
+          selection == null || selection.isEmpty
+              ? _Hint(text: 'Drag across the waveform to choose a range.')
+              : _TrimBar(controller: _controller, selection: selection),
+        _Tool.fade =>
+          selection == null || selection.isEmpty
+              ? _Hint(text: 'Select a range, then fade its edges.')
+              : Row(
+                  children: <Widget>[
+                    Text(
+                      '${(selection.durationIn(_controller.timeline).inMilliseconds / 1000).toStringAsFixed(1)}s',
+                      style: theme.typography.mono.copyWith(
+                        fontSize: 14,
+                        color: theme.colors.tint,
+                      ),
                     ),
-                  )
-                : const SizedBox(width: double.infinity),
+                    const Spacer(),
+                    MonoButton(
+                      size: MonoButtonSize.sm,
+                      onPressed: () => _controller.apply(
+                        FadeEdit(selection, fadeIn: 4410, fadeOut: 4410),
+                      ),
+                      child: const Text('Fade 100ms'),
+                    ),
+                  ],
+                ),
+      },
+    );
+  }
+}
+
+/// What to do, when a tool needs a selection and there is not one.
+class _Hint extends StatelessWidget {
+  const _Hint({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = MonokitTheme.of(context);
+    return SizedBox(
+      height: 40,
+      width: double.infinity,
+      child: Center(
+        child: Text(
+          text,
+          style: theme.typography.bodyMedium.copyWith(
+            color: theme.colors.foregroundMuted,
           ),
-          if (_controller.error != null) ...<Widget>[
-            SizedBox(height: theme.spacing.md),
-            MonoAlert(
-              variant: MonoAlertVariant.destructive,
-              title: const Text('Export failed'),
-              description: Text(_controller.error!),
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -416,11 +502,8 @@ class _TrimBar extends StatelessWidget {
     final seconds =
         selection.durationIn(controller.timeline).inMilliseconds / 1000;
 
-    return MonoSurface(
-      padding: EdgeInsets.symmetric(
-        horizontal: theme.spacing.md,
-        vertical: theme.spacing.sm,
-      ),
+    return SizedBox(
+      height: 40,
       child: Row(
         children: <Widget>[
           Text(

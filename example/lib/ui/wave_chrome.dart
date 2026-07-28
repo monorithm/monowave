@@ -151,3 +151,106 @@ class WaveChromeButton extends StatelessWidget {
 }
 
 enum WaveTone { neutral, accent, live }
+
+/// One entry in a [WaveRail].
+class WaveRailItem<T> {
+  const WaveRailItem({
+    required this.value,
+    required this.label,
+    required this.icon,
+  });
+
+  final T value;
+  final String label;
+  final Widget Function(Color color) icon;
+}
+
+/// The bottom tool rail: icon over label, one per tool, selected one tinted.
+///
+/// The same shape `monolens/example` uses. A rail rather than a row of buttons
+/// because the items are modes, not actions — picking one changes what the
+/// tray above shows rather than doing something immediately.
+class WaveRail<T> extends StatelessWidget {
+  const WaveRail({
+    required this.items,
+    required this.value,
+    required this.onChanged,
+    super.key,
+    this.height = 62,
+  });
+
+  final List<WaveRailItem<T>> items;
+  final T value;
+  final ValueChanged<T> onChanged;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = MonokitTheme.of(context);
+    final colors = theme.colors;
+
+    return SizedBox(
+      height: height,
+      child: Row(
+        children: <Widget>[
+          for (final item in items)
+            Expanded(
+              child: MonoPressable(
+                onPressed: () => onChanged(item.value),
+                semanticLabel: item.label,
+                child: (context, states) {
+                  final selected = item.value == value;
+                  final tint = selected ? colors.tint : colors.foregroundMuted;
+                  return Container(
+                    color: states.contains(MonoState.pressed)
+                        ? colors.fill
+                        : null,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: <Widget>[
+                        item.icon(tint),
+                        SizedBox(height: theme.spacing.xs),
+                        Text(
+                          item.label,
+                          style: theme.typography.labelMedium.copyWith(
+                            color: tint,
+                            fontWeight: selected
+                                ? FontWeight.w600
+                                : FontWeight.w400,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The panel above the rail. Swaps on the selected tool, sized to its content.
+class WaveTray extends StatelessWidget {
+  const WaveTray({required this.slot, required this.child, super.key});
+
+  /// Identifies the current panel, so the switcher knows when to cross-fade.
+  final Object slot;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = MonokitTheme.of(context);
+
+    return AnimatedSize(
+      duration: theme.motion.reduced(context, theme.motion.fast),
+      curve: theme.motion.standard,
+      alignment: Alignment.bottomCenter,
+      child: AnimatedSwitcher(
+        duration: theme.motion.reduced(context, theme.motion.fast),
+        child: KeyedSubtree(key: ValueKey<Object>(slot), child: child),
+      ),
+    );
+  }
+}
