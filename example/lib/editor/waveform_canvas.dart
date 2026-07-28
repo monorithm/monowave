@@ -22,9 +22,9 @@ class WaveformStyle {
     this.playheadWidth = 2.0,
     this.normalize = true,
     this.maxGain = 8.0,
-    this.barSlot = 4.0,
-    this.gamma = 0.62,
-    this.hullOpacity = 0.38,
+    this.barSlot = 9.0,
+    this.gamma = 0.9,
+    this.hullOpacity = 0.22,
   });
 
   final Color played;
@@ -69,16 +69,23 @@ class WaveformStyle {
   /// neighbours swing wildly. Aggregating into wider slots is what every
   /// consumer voice app does, and it costs nothing — merging min/max pairs is
   /// exactly the operation the mipmap already performs, so no peak is lost.
+  ///
+  /// Wider than feels necessary, deliberately. Two hundred bars across six
+  /// seconds is a texture, not a shape; forty is a shape. Resolution past the
+  /// point where the eye can follow the envelope is what makes a waveform read
+  /// as a fence.
   final double barSlot;
 
   /// Exponent on the amplitude axis. 1.0 is linear; lower lifts quiet content.
   ///
-  /// A gamma curve rather than decibels. Decibels are right for a *meter*,
-  /// where the question is "how loud is it now" — but across a whole waveform
-  /// a dB axis crushes everything above roughly -10 dB into the same height,
-  /// turning speech into a wall of equal bars. A gentle power curve lifts the
-  /// quiet parts while keeping the loud ones distinguishable from each other,
-  /// which is what makes the shape readable.
+  /// Kept close to linear on purpose. Normalization already lifts a quiet
+  /// recording to fill the box, so a strong curve on top of it lifts everything
+  /// a second time and the envelope disappears — every bar lands in the top
+  /// third and the result reads as a fence rather than as audio.
+  ///
+  /// Decibels are wrong here for the same reason, only more so. dB is right for
+  /// a *meter*, where the question is "how loud is it now"; across a waveform
+  /// it crushes everything above roughly -10 dB to the same height.
   final double gamma;
 
   double get slotFraction => barFraction;
