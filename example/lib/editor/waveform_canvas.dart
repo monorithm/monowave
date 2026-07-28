@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:monokit/monokit.dart';
 import 'package:monowave/monowave.dart';
 
@@ -20,6 +22,8 @@ class WaveformStyle {
     this.playheadWidth = 2.0,
     this.normalize = true,
     this.maxGain = 8.0,
+    this.barSlot = 4.0,
+    this.gamma = 0.62,
   });
 
   final Color played;
@@ -49,6 +53,27 @@ class WaveformStyle {
 
   /// Ceiling on that scaling, so digital silence does not amplify into noise.
   final double maxGain;
+
+  /// Width of one bar and its gap, in logical pixels.
+  ///
+  /// One bar per pixel is what makes a waveform look like static: each bar is
+  /// the extremes of its bucket, so a single sample sets its height and
+  /// neighbours swing wildly. Aggregating into wider slots is what every
+  /// consumer voice app does, and it costs nothing — merging min/max pairs is
+  /// exactly the operation the mipmap already performs, so no peak is lost.
+  final double barSlot;
+
+  /// Exponent on the amplitude axis. 1.0 is linear; lower lifts quiet content.
+  ///
+  /// A gamma curve rather than decibels. Decibels are right for a *meter*,
+  /// where the question is "how loud is it now" — but across a whole waveform
+  /// a dB axis crushes everything above roughly -10 dB into the same height,
+  /// turning speech into a wall of equal bars. A gentle power curve lifts the
+  /// quiet parts while keeping the loud ones distinguishable from each other,
+  /// which is what makes the shape readable.
+  final double gamma;
+
+  double get slotFraction => barFraction;
 
   bool sameGeometry(WaveformStyle other) =>
       barFraction == other.barFraction &&
@@ -267,6 +292,10 @@ class _PlayheadPainter extends CustomPainter {
 }
 
 /// Shared geometry, so the two passes cannot drift out of alignment.
+///
+/// Two standardisations happen here, both purely visual — the peaks themselves
+/// are untouched, which is the whole point of the package handing over exact
+/// data and letting the host decide how to draw it.
 void _paintBars(
   Canvas canvas,
   Size size,
@@ -275,47 +304,69 @@ void _paintBars(
   double gain,
   Paint paint,
 ) {
-  if (window.isEmpty || size.height <= 0) return;
+  if (window.isEmpty || size.height <= 0 || size.width <= 0) return;
 
   const fullScale = 32768.0;
-  // Headroom, so the loudest peaks stop short of the edge instead of butting
-  // against it. A waveform that touches the frame reads as clipped whether it
-  // is or not.
-  final center = size.height / 2 * 0.88;
 
-  // Not a clamp: zoomed far enough out, a slot is narrower than the minimum bar
-  // width, and clamp(min, max) with min > max throws. Bars overlapping slightly
-  // is the right answer there — a gap would read as silence that is not there.
-  final ink = window.pixelsPerPair * style.barFraction;
-  final barWidth = ink < style.minBarWidth ? style.minBarWidth : ink;
+  // Headroom, so the loudest peaks stop short of the frame. A waveform that
+  // touches its edge reads as clipped whether it is or not.
+  final centre = size.height / 2;
+  final reach = centre * 0.88;
 
-  for (var i = 0; i < window.pairCount; i++) {
-    final slotX = window.xOfFirstPair + i * window.pixelsPerPair;
-    if (slotX + window.pixelsPerPair < 0) continue;
-    if (slotX > size.width) break;
+  /// Amplitude 0..1 onto height 0..1.
+  double curve(double amplitude) {
+    if (amplitude <= 0) return 0;
+    return math.pow(amplitude.clamp(0.0, 1.0), style.gamma).toDouble();
+  }
 
-    // Canvas y grows downward, and min is negative, so the subtraction puts the
-    // minimum below the centre line and the maximum above it.
-    final top =
-        center - (window.maxAt(i) * gain / fullScale).clamp(-1.0, 1.0) * center;
-    final bottom =
-        center - (window.minAt(i) * gain / fullScale).clamp(-1.0, 1.0) * center;
+  // One bar per slot, not one per pair. Pairs falling inside a slot are merged
+  // by min-of-mins and max-of-maxes — lossless, and the same reduction the
+  // pyramid uses.
+  final slots = math.max(1, (size.width / style.barSlot).floor());
+  final ink = math.max(1.0, style.barSlot * style.barFraction);
+  final radius = Radius.circular(ink / 2);
 
-    var barHeight = bottom - top;
-    var barTop = top;
-    if (barHeight < style.minBarHeight) {
-      barTop = center - style.minBarHeight / 2;
-      barHeight = style.minBarHeight;
+  for (var slot = 0; slot < slots; slot++) {
+    final left = slot * style.barSlot;
+
+    // Which pairs land in this slot, in window coordinates.
+    final from = ((left - window.xOfFirstPair) / window.pixelsPerPair).floor();
+    final to =
+        ((left + style.barSlot - window.xOfFirstPair) / window.pixelsPerPair)
+            .ceil();
+    if (to <= 0 || from >= window.pairCount) continue;
+
+    var low = 0;
+    var high = 0;
+    var seen = false;
+    for (var i = math.max(0, from); i < math.min(to, window.pairCount); i++) {
+      final pairLow = window.minAt(i);
+      final pairHigh = window.maxAt(i);
+      if (!seen) {
+        low = pairLow;
+        high = pairHigh;
+        seen = true;
+      } else {
+        if (pairLow < low) low = pairLow;
+        if (pairHigh > high) high = pairHigh;
+      }
     }
-    // The centre line sits at the real middle; only the excursion is scaled.
-    barTop += size.height / 2 - center;
+    if (!seen) continue;
 
-    canvas.drawRect(
-      Rect.fromLTWH(
-        slotX + (window.pixelsPerPair - barWidth) / 2,
-        barTop,
-        barWidth,
-        barHeight,
+    final up = curve((high.abs() * gain) / fullScale) * reach;
+    final down = curve((low.abs() * gain) / fullScale) * reach;
+
+    var top = centre - up;
+    var height = up + down;
+    if (height < style.minBarHeight) {
+      top = centre - style.minBarHeight / 2;
+      height = style.minBarHeight;
+    }
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(left + (style.barSlot - ink) / 2, top, ink, height),
+        radius,
       ),
       paint,
     );
@@ -351,8 +402,6 @@ class _SelectionPainter extends CustomPainter {
       );
     }
 
-    // Edges are drawn at their true position even when off-screen is clamped
-    // away, so a handle never appears pinned to the edge of the viewport.
     final edgePaint = Paint()..color = edge;
     for (final x in <double>[startX, endX]) {
       if (x < -1 || x > size.width + 1) continue;
