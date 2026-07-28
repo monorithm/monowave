@@ -1,5 +1,6 @@
 // The min/max pyramid, and the memory it lives in.
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -13,6 +14,7 @@ struct wf_peaks {
   int32_t levels;
   int64_t pair_counts[WF_MAX_LEVELS];
   int16_t *data[WF_MAX_LEVELS];
+  int16_t *rms[WF_MAX_LEVELS];
 };
 
 int32_t wf_abi_version(void) { return WF_ABI_VERSION; }
@@ -39,12 +41,14 @@ void wf_reduce_minmax(const int16_t *samples, int32_t count, int16_t *out_min,
 
 void wf_pair_builder_init(wf_pair_builder *builder) {
   builder->pairs = NULL;
+  builder->rms = NULL;
   builder->count = 0;
   builder->capacity = 0;
   builder->failed = 0;
 }
 
-void wf_pair_builder_push(wf_pair_builder *builder, int16_t lo, int16_t hi) {
+void wf_pair_builder_push(wf_pair_builder *builder, int16_t lo, int16_t hi,
+                          int16_t rms) {
   if (builder->failed) return;
 
   if (builder->count == builder->capacity) {
@@ -58,16 +62,27 @@ void wf_pair_builder_push(wf_pair_builder *builder, int16_t lo, int16_t hi) {
       return;
     }
     builder->pairs = grown;
+
+    int16_t *grown_rms =
+        (int16_t *)realloc(builder->rms, (size_t)next * sizeof(int16_t));
+    if (grown_rms == NULL) {
+      builder->failed = 1;
+      return;
+    }
+    builder->rms = grown_rms;
+
     builder->capacity = next;
   }
 
   builder->pairs[builder->count * 2] = lo;
   builder->pairs[builder->count * 2 + 1] = hi;
+  builder->rms[builder->count] = rms;
   builder->count++;
 }
 
 void wf_pair_builder_dispose(wf_pair_builder *builder) {
   free(builder->pairs);
+  free(builder->rms);
   wf_pair_builder_init(builder);
 }
 
@@ -86,9 +101,11 @@ wf_peaks *wf_peaks_from_base(wf_pair_builder *builder, int32_t sample_rate,
 
   // Level 0 takes over the builder's buffer rather than copying it.
   peaks->data[0] = builder->pairs;
+  peaks->rms[0] = builder->rms;
   peaks->pair_counts[0] = builder->count;
   peaks->levels = 1;
   builder->pairs = NULL;
+  builder->rms = NULL;
   builder->count = 0;
   builder->capacity = 0;
 
@@ -102,29 +119,43 @@ wf_peaks *wf_peaks_from_base(wf_pair_builder *builder, int32_t sample_rate,
     const int64_t fine_pairs = peaks->pair_counts[level - 1];
     const int64_t coarse_pairs = (fine_pairs + 1) / 2;
 
+    const int16_t *fine_rms = peaks->rms[level - 1];
+
     int16_t *coarse =
         (int16_t *)malloc((size_t)coarse_pairs * 2 * sizeof(int16_t));
-    if (coarse == NULL) {
+    int16_t *coarse_rms =
+        (int16_t *)malloc((size_t)coarse_pairs * sizeof(int16_t));
+    if (coarse == NULL || coarse_rms == NULL) {
+      free(coarse);
+      free(coarse_rms);
       wf_peaks_free(peaks);
       return NULL;
     }
 
     for (int64_t pair = 0; pair < coarse_pairs; pair++) {
-      const int64_t a = pair * 2;
-      const int64_t b = a + 1;
+      const int64_t a_index = pair * 2;
+      const int64_t b_index = a_index + 1;
 
-      int16_t lo = fine[a * 2];
-      int16_t hi = fine[a * 2 + 1];
-      if (b < fine_pairs) {
-        if (fine[b * 2] < lo) lo = fine[b * 2];
-        if (fine[b * 2 + 1] > hi) hi = fine[b * 2 + 1];
+      int16_t lo = fine[a_index * 2];
+      int16_t hi = fine[a_index * 2 + 1];
+      if (b_index < fine_pairs) {
+        if (fine[b_index * 2] < lo) lo = fine[b_index * 2];
+        if (fine[b_index * 2 + 1] > hi) hi = fine[b_index * 2 + 1];
       }
 
       coarse[pair * 2] = lo;
       coarse[pair * 2 + 1] = hi;
+
+      // Root of the mean of the squares, so the result is still an RMS rather
+      // than an average of averages.
+      const double a = (double)fine_rms[a_index];
+      const double b =
+          b_index < fine_pairs ? (double)fine_rms[b_index] : a;
+      coarse_rms[pair] = (int16_t)sqrt((a * a + b * b) / 2.0);
     }
 
     peaks->data[level] = coarse;
+    peaks->rms[level] = coarse_rms;
     peaks->pair_counts[level] = coarse_pairs;
     peaks->levels++;
   }
@@ -162,10 +193,16 @@ const int16_t *wf_peaks_data(const wf_peaks *peaks, int32_t level) {
   return peaks->data[level];
 }
 
+const int16_t *wf_peaks_rms(const wf_peaks *peaks, int32_t level) {
+  if (peaks == NULL || level < 0 || level >= peaks->levels) return NULL;
+  return peaks->rms[level];
+}
+
 void wf_peaks_free(wf_peaks *peaks) {
   if (peaks == NULL) return;
   for (int32_t level = 0; level < WF_MAX_LEVELS; level++) {
     free(peaks->data[level]);
+    free(peaks->rms[level]);
   }
   free(peaks);
 }

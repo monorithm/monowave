@@ -21,6 +21,7 @@ class PeakWindow {
     required this.pairCount,
     required this.xOfFirstPair,
     required this.pixelsPerPair,
+    this.rms,
   });
 
   /// The level's interleaved `[min, max, ...]` data. Read-only.
@@ -44,6 +45,9 @@ class PeakWindow {
   /// Width of one pair on screen, in pixels.
   final double pixelsPerPair;
 
+  /// One RMS value per pair, aligned with [peaks]. Null when unavailable.
+  final Int16List? rms;
+
   /// Whether there is anything to draw.
   bool get isEmpty => pairCount <= 0;
 
@@ -52,6 +56,9 @@ class PeakWindow {
 
   /// Maximum sample value of pair [i], where `i` is 0-based within the window.
   int maxAt(int i) => peaks[(firstPair + i) * 2 + 1];
+
+  /// RMS of pair [i], or null if this pyramid carries none.
+  int? rmsAt(int i) => rms?[firstPair + i];
 }
 
 /// Which part of a waveform is on screen, and at what zoom.
@@ -118,6 +125,7 @@ class WaveformViewport {
       pairCount: last - first,
       xOfFirstPair: xForSample(first * levelSpp),
       pixelsPerPair: levelSpp / samplesPerPixel,
+      rms: peaks.rms(level),
     );
   }
 

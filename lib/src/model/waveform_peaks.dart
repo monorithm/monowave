@@ -22,8 +22,10 @@ class WaveformPeaks {
     required this.sampleRate,
     required this.channels,
     required this.lengthInSamples,
+    List<Int16List>? rms,
     void Function()? onDispose,
-  }) : _onDispose = onDispose; // ignore: prefer_initializing_formals
+  }) : _rms = rms, // ignore: prefer_initializing_formals
+       _onDispose = onDispose; // ignore: prefer_initializing_formals
 
   /// Wraps levels that were built elsewhere — by the C core, over memory it
   /// still owns.
@@ -40,6 +42,7 @@ class WaveformPeaks {
     required int channels,
     required int lengthInSamples,
     required int baseSamplesPerPixel,
+    List<Int16List>? rms,
     void Function()? onDispose,
   }) {
     if (levels.isEmpty) {
@@ -51,6 +54,7 @@ class WaveformPeaks {
       sampleRate: sampleRate,
       channels: channels,
       lengthInSamples: lengthInSamples,
+      rms: rms,
       onDispose: onDispose,
     );
   }
@@ -66,6 +70,7 @@ class WaveformPeaks {
 
   final int _baseSamplesPerPixel;
   final List<Int16List> _levels;
+  final List<Int16List>? _rms;
   final void Function()? _onDispose;
   bool _disposed = false;
 
@@ -97,6 +102,22 @@ class WaveformPeaks {
       throw StateError('These peaks were disposed; the memory is gone.');
     }
     return _levels[level];
+  }
+
+  /// One RMS value per pair at [level], or null if none was computed.
+  ///
+  /// Peaks say how far the audio went; RMS says how much of it there was.
+  /// Drawing both — a peak hull with an RMS core inside it — is what makes a
+  /// waveform read as a shape rather than as its outliers.
+  ///
+  /// Null for pyramids built in Dart from raw samples, which have no reason to
+  /// compute it; the C core always provides it.
+  Int16List? rms(int level) {
+    if (_disposed) {
+      throw StateError('These peaks were disposed; the memory is gone.');
+    }
+    final series = _rms;
+    return series == null || level >= series.length ? null : series[level];
   }
 
   /// Releases the memory behind these peaks.

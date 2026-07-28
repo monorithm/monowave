@@ -22,7 +22,7 @@ extern "C" {
 #endif
 
 // Bumped whenever a signature below changes. Dart asserts on it at startup.
-#define WF_ABI_VERSION 6
+#define WF_ABI_VERSION 7
 
 // Cap on pyramid depth. 24 levels at a 128-sample base covers a bit over a
 // billion samples per pair — far past any real recording.
@@ -76,6 +76,16 @@ WF_EXPORT int32_t wf_peaks_base_spp(const wf_peaks *peaks);
 WF_EXPORT int32_t wf_peaks_pair_count(const wf_peaks *peaks, int32_t level);
 /// Interleaved `[min, max, ...]` for `level`. Valid until wf_peaks_free.
 WF_EXPORT const int16_t *wf_peaks_data(const wf_peaks *peaks, int32_t level);
+
+/// One RMS value per pair at `level`. Valid until wf_peaks_free.
+///
+/// Peaks say how far the audio went; RMS says how much of it there was. Drawing
+/// both — a peak hull with an RMS core inside it — is what every serious
+/// waveform display does, because the hull alone is dominated by outliers.
+///
+/// Coarser levels combine children as the root of the mean of their squares,
+/// which is what keeps the value an RMS rather than an average of averages.
+WF_EXPORT const int16_t *wf_peaks_rms(const wf_peaks *peaks, int32_t level);
 WF_EXPORT void wf_peaks_free(wf_peaks *peaks);
 
 // --- Capture ----------------------------------------------------------------
@@ -190,13 +200,15 @@ WF_EXPORT int32_t wf_export_wav(const char *src_path, const char *out_path,
 /// would otherwise need hundreds of megabytes before any reduction happens.
 typedef struct {
   int16_t *pairs;
+  int16_t *rms;
   int64_t count;
   int64_t capacity;
   int failed;
 } wf_pair_builder;
 
 void wf_pair_builder_init(wf_pair_builder *builder);
-void wf_pair_builder_push(wf_pair_builder *builder, int16_t lo, int16_t hi);
+void wf_pair_builder_push(wf_pair_builder *builder, int16_t lo, int16_t hi,
+                          int16_t rms);
 void wf_pair_builder_dispose(wf_pair_builder *builder);
 
 /// Takes ownership of the builder's buffer and builds the coarser levels.

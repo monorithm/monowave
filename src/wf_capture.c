@@ -54,7 +54,8 @@ struct wf_capture {
 
   // Preallocated history, so stop() can answer even if the consumer never
   // drained. Growing this from the audio thread is not an option.
-  int16_t *take;
+  int16_t *take;      // interleaved min, max
+  int16_t *take_rms;  // one per pair
   int32_t take_capacity;
   _Atomic int32_t take_count;
   _Atomic int32_t overflowed;
@@ -121,6 +122,7 @@ static void wf_emit(wf_capture *capture) {
   if (taken < capture->take_capacity) {
     capture->take[taken * 2] = lo;
     capture->take[taken * 2 + 1] = hi;
+    capture->take_rms[taken] = rms;
     atomic_store_explicit(&capture->take_count, taken + 1, memory_order_release);
   } else {
     atomic_store_explicit(&capture->overflowed, 1, memory_order_relaxed);
@@ -213,7 +215,10 @@ wf_capture *wf_capture_create(int32_t sample_rate, int32_t channels,
   const int32_t ring_size = wf_round_up_pow2(ring_capacity);
   capture->ring = (wf_frame *)calloc((size_t)ring_size, sizeof(wf_frame));
   capture->take = (int16_t *)calloc((size_t)take_capacity * 2, sizeof(int16_t));
-  if (capture->ring == NULL || capture->take == NULL) {
+  capture->take_rms =
+      (int16_t *)calloc((size_t)take_capacity, sizeof(int16_t));
+  if (capture->ring == NULL || capture->take == NULL ||
+      capture->take_rms == NULL) {
     wf_capture_destroy(capture);
     *out_error = WF_ERR_MEMORY;
     return NULL;
@@ -396,7 +401,8 @@ wf_peaks *wf_capture_take_peaks(wf_capture *capture, int32_t *out_error) {
   wf_pair_builder_init(&builder);
   for (int32_t pair = 0; pair < taken; pair++) {
     wf_pair_builder_push(&builder, capture->take[pair * 2],
-                         capture->take[pair * 2 + 1]);
+                         capture->take[pair * 2 + 1],
+                         capture->take_rms[pair]);
   }
   if (builder.failed) {
     wf_pair_builder_dispose(&builder);
@@ -423,5 +429,6 @@ void wf_capture_destroy(wf_capture *capture) {
   free(capture->ring);
   free(capture->pcm);
   free(capture->take);
+  free(capture->take_rms);
   free(capture);
 }

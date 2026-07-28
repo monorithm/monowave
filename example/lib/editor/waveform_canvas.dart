@@ -24,10 +24,18 @@ class WaveformStyle {
     this.maxGain = 8.0,
     this.barSlot = 4.0,
     this.gamma = 0.62,
+    this.hullOpacity = 0.38,
   });
 
   final Color played;
   final Color unplayed;
+
+  /// How much of the peak hull shows through behind the RMS core.
+  ///
+  /// The hull is where the audio *reached*; the core is how much of it there
+  /// was. Drawing the hull at full strength lets outliers dominate again, which
+  /// is the thing the core exists to fix.
+  final double hullOpacity;
   final Color playhead;
 
   /// Wash over the selected range, and the colour of its two edges.
@@ -322,6 +330,11 @@ void _paintBars(
   // One bar per slot, not one per pair. Pairs falling inside a slot are merged
   // by min-of-mins and max-of-maxes — lossless, and the same reduction the
   // pyramid uses.
+  // The hull is only drawn separately when there is a core to put inside it.
+  final hull = window.rms == null
+      ? null
+      : (Paint()..color = paint.color.withValues(alpha: style.hullOpacity));
+
   final slots = math.max(1, (size.width / style.barSlot).floor());
   final ink = math.max(1.0, style.barSlot * style.barFraction);
   final radius = Radius.circular(ink / 2);
@@ -338,6 +351,8 @@ void _paintBars(
 
     var low = 0;
     var high = 0;
+    var loudness = 0.0;
+    var counted = 0;
     var seen = false;
     for (var i = math.max(0, from); i < math.min(to, window.pairCount); i++) {
       final pairLow = window.minAt(i);
@@ -350,9 +365,20 @@ void _paintBars(
         if (pairLow < low) low = pairLow;
         if (pairHigh > high) high = pairHigh;
       }
+
+      // Merging RMS is the root of the mean of the squares, not the mean.
+      final pairRms = window.rmsAt(i);
+      if (pairRms != null) {
+        loudness += pairRms * pairRms.toDouble();
+        counted++;
+      }
     }
     if (!seen) continue;
+    loudness = counted == 0 ? 0 : math.sqrt(loudness / counted);
 
+    final x = left + (style.barSlot - ink) / 2;
+
+    // The hull: how far the audio reached.
     final up = curve((high.abs() * gain) / fullScale) * reach;
     final down = curve((low.abs() * gain) / fullScale) * reach;
 
@@ -364,12 +390,23 @@ void _paintBars(
     }
 
     canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(left + (style.barSlot - ink) / 2, top, ink, height),
-        radius,
-      ),
-      paint,
+      RRect.fromRectAndRadius(Rect.fromLTWH(x, top, ink, height), radius),
+      hull ?? paint,
     );
+
+    // The core: how much of it there was. Symmetric about the centre, because
+    // RMS has no sign.
+    if (hull != null && loudness > 0) {
+      final half = curve((loudness * gain) / fullScale) * reach;
+      final coreHeight = math.max(half * 2, style.minBarHeight);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(x, centre - coreHeight / 2, ink, coreHeight),
+          radius,
+        ),
+        paint,
+      );
+    }
   }
 }
 

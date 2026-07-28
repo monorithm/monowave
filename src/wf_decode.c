@@ -10,6 +10,7 @@
 // voice-note path never decodes at all: the sender computes peaks at record
 // time and ships them as metadata.
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -185,14 +186,21 @@ static wf_peaks *wf_build(wf_reader *reader, int32_t base_spp,
     // one channel's version of it.
     int16_t lo = 32767;
     int16_t hi = -32768;
+    int64_t squares = 0;
     const int64_t samples = frames * reader->channels;
     for (int64_t i = 0; i < samples; i++) {
       const int16_t s = chunk[i];
       if (s < lo) lo = s;
       if (s > hi) hi = s;
+      squares += (int64_t)s * (int64_t)s;
     }
 
-    wf_pair_builder_push(&builder, lo, hi);
+    // How much audio there was, alongside how far it went.
+    const double mean = samples > 0 ? (double)squares / (double)samples : 0.0;
+    const double root = sqrt(mean);
+    const int16_t rms = root > 32767.0 ? 32767 : (int16_t)root;
+
+    wf_pair_builder_push(&builder, lo, hi, rms);
     if (builder.failed) break;
   }
 

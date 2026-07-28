@@ -74,6 +74,11 @@ external int wfPeaksPairCount(Pointer<WfPeaks> peaks, int level);
 )
 external Pointer<Int16> wfPeaksData(Pointer<WfPeaks> peaks, int level);
 
+@Native<Pointer<Int16> Function(Pointer<WfPeaks>, Int32)>(
+  symbol: 'wf_peaks_rms',
+)
+external Pointer<Int16> wfPeaksRms(Pointer<WfPeaks> peaks, int level);
+
 @Native<Void Function(Pointer<WfPeaks>)>(symbol: 'wf_peaks_free')
 external void wfPeaksFree(Pointer<WfPeaks> peaks);
 

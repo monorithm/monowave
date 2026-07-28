@@ -6,6 +6,7 @@
 // property is the whole justification for one C core rather than six decoders.
 
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:monowave/monowave.dart';
@@ -19,7 +20,7 @@ void main() {
   setUpAll(platform.ensureInitialized);
 
   test('the ABI matches what these bindings were written against', () {
-    expect(platform.abiVersion(), 6);
+    expect(platform.abiVersion(), 7);
   });
 
   group('decoding WAV', () {
@@ -80,6 +81,55 @@ void main() {
           }
         }
       }
+    });
+  });
+
+  group('RMS', () {
+    test('sits inside the peaks it accompanies', () async {
+      // The invariant that makes a two-layer waveform honest: the core can
+      // never poke outside the hull that contains it.
+      final peaks = await platform.decodeBytes(
+        fixtures.wav(fixtures.sineSweep()),
+      );
+      addTearDown(peaks.dispose);
+
+      for (var level = 0; level < peaks.levels; level++) {
+        final view = peaks.view(level);
+        final rms = peaks.rms(level);
+        expect(rms, isNotNull, reason: 'the C core always computes RMS');
+
+        for (var pair = 0; pair < peaks.pairCount(level); pair++) {
+          final reach = math.max(
+            view[pair * 2].abs(),
+            view[pair * 2 + 1].abs(),
+          );
+          expect(rms![pair], lessThanOrEqualTo(reach));
+          expect(rms[pair], greaterThanOrEqualTo(0));
+        }
+      }
+    });
+
+    test('a sine reduces to about its peak over root two', () async {
+      final peaks = await platform.decodeBytes(
+        fixtures.wav(
+          Int16List.fromList([
+            for (var i = 0; i < 44100; i++)
+              (math.sin(2 * math.pi * 440 * i / 44100) * 20000).round(),
+          ]),
+        ),
+      );
+      addTearDown(peaks.dispose);
+
+      expect(peaks.rms(0)![10], closeTo(20000 / math.sqrt2, 600));
+    });
+
+    test('silence has no loudness', () async {
+      final peaks = await platform.decodeBytes(
+        fixtures.wav(fixtures.silence()),
+      );
+      addTearDown(peaks.dispose);
+
+      expect(peaks.rms(0), everyElement(0));
     });
   });
 

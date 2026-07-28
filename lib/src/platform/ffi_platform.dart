@@ -156,8 +156,16 @@ class FfiMonowavePlatform implements MonowavePlatform {
               .asTypedList(bindings.wfPeaksPairCount(pointer, level) * 2),
       ];
 
+      final rms = <Int16List>[
+        for (var level = 0; level < bindings.wfPeaksLevels(pointer); level++)
+          bindings
+              .wfPeaksRms(pointer, level)
+              .asTypedList(bindings.wfPeaksPairCount(pointer, level)),
+      ];
+
       return WaveformPeaks.fromLevels(
         levels,
+        rms: rms,
         sampleRate: bindings.wfPeaksSampleRate(pointer),
         channels: bindings.wfPeaksChannels(pointer),
         lengthInSamples: bindings.wfPeaksLength(pointer).toInt(),
