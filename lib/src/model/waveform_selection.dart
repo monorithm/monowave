@@ -17,7 +17,7 @@ class WaveformSelection {
   /// A selection of nothing, at the origin.
   static const empty = WaveformSelection._(0, 0);
 
-  /// A collapsed selection at [sample] — where a drag begins.
+  /// A collapsed selection at [sample] - where a drag begins.
   factory WaveformSelection.at(int sample) =>
       WaveformSelection._(sample, sample);
 
@@ -66,7 +66,7 @@ class WaveformSelection {
 /// Where a cut should actually land, given peaks alone.
 ///
 /// **These snap to the finest level's resolution, not to a sample.** With a
-/// 128-sample base at 44.1 kHz that is about 3 ms — inaudible for a trim point,
+/// 128-sample base at 44.1 kHz that is about 3 ms - inaudible for a trim point,
 /// and worth stating plainly because "zero crossing" usually implies exactness.
 /// Sample-exact snapping would mean re-reading the source, which is a decode
 /// per gesture; it can be added as a C entry point if something needs it.
@@ -85,7 +85,7 @@ abstract final class WaveformSnap {
   }) =>
       _search(peaks, sample, searchRadius, (min, max) => min <= 0 && max >= 0);
 
-  /// The quietest bucket within [searchRadius] — where a cut is least audible.
+  /// The quietest bucket within [searchRadius] - where a cut is least audible.
   ///
   /// Usually the better default for trimming speech: silence between words is a
   /// more forgiving edit point than a zero crossing mid-syllable.

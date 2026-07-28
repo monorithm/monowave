@@ -168,7 +168,7 @@ void main() {
     });
 
     test('stops at the end of the audio rather than padding to the width', () {
-      // A viewport zoomed out past the file is legitimate — there is simply
+      // A viewport zoomed out past the file is legitimate - there is simply
       // nothing to draw on the right. The painter must not assume a full width.
       final peaks = _peaks(samples: 4096, base: 64);
       const viewport = WaveformViewport(

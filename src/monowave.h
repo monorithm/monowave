@@ -1,7 +1,7 @@
 // monowave's C core: the only place audio is actually processed.
 //
-// The same source is reached two ways — over `dart:ffi` on the five native
-// targets, and compiled to WASM for web — so anything that behaves differently
+// The same source is reached two ways - over `dart:ffi` on the five native
+// targets, and compiled to WASM for web - so anything that behaves differently
 // between the two breaks the property this architecture exists to guarantee.
 // Keep it free of platform assumptions.
 
@@ -25,7 +25,7 @@ extern "C" {
 #define WF_ABI_VERSION 7
 
 // Cap on pyramid depth. 24 levels at a 128-sample base covers a bit over a
-// billion samples per pair — far past any real recording.
+// billion samples per pair - far past any real recording.
 #define WF_MAX_LEVELS 24
 
 enum {
@@ -55,7 +55,7 @@ WF_EXPORT void wf_reduce_minmax(const int16_t *samples, int32_t count,
 /// Decodes `path` and builds a pyramid at `base_spp` samples per pair.
 ///
 /// Not available when built without stdio (the WASM build), where it always
-/// reports WF_ERR_OPEN — web has no filesystem to read.
+/// reports WF_ERR_OPEN - web has no filesystem to read.
 WF_EXPORT wf_peaks *wf_decode_file(const char *path, int32_t base_spp,
                                    int32_t *out_error);
 
@@ -80,7 +80,7 @@ WF_EXPORT const int16_t *wf_peaks_data(const wf_peaks *peaks, int32_t level);
 /// One RMS value per pair at `level`. Valid until wf_peaks_free.
 ///
 /// Peaks say how far the audio went; RMS says how much of it there was. Drawing
-/// both — a peak hull with an RMS core inside it — is what every serious
+/// both - a peak hull with an RMS core inside it - is what every serious
 /// waveform display does, because the hull alone is dominated by outliers.
 ///
 /// Coarser levels combine children as the root of the mean of their squares,

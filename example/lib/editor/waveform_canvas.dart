@@ -54,7 +54,7 @@ class WaveformStyle {
   /// Scale the drawing so the loudest moment fills the height.
   ///
   /// On by default, and it is the difference between a legible waveform and a
-  /// flat line. Normal speech peaks well below full scale — a quiet room tone
+  /// flat line. Normal speech peaks well below full scale - a quiet room tone
   /// sits around 1% of it, which draws as a two-pixel bar and reads as broken.
   /// `CompactBars` makes the same correction for the fixed-bar case.
   final bool normalize;
@@ -67,7 +67,7 @@ class WaveformStyle {
   /// One bar per pixel is what makes a waveform look like static: each bar is
   /// the extremes of its bucket, so a single sample sets its height and
   /// neighbours swing wildly. Aggregating into wider slots is what every
-  /// consumer voice app does, and it costs nothing — merging min/max pairs is
+  /// consumer voice app does, and it costs nothing - merging min/max pairs is
   /// exactly the operation the mipmap already performs, so no peak is lost.
   ///
   /// Wider than feels necessary, deliberately. Two hundred bars across six
@@ -80,7 +80,7 @@ class WaveformStyle {
   ///
   /// Kept close to linear on purpose. Normalization already lifts a quiet
   /// recording to fill the box, so a strong curve on top of it lifts everything
-  /// a second time and the envelope disappears — every bar lands in the top
+  /// a second time and the envelope disappears - every bar lands in the top
   /// third and the result reads as a fence rather than as audio.
   ///
   /// Decibels are wrong here for the same reason, only more so. dB is right for
@@ -135,7 +135,7 @@ class PeakWaveform extends StatelessWidget {
   /// How much to scale so the body of the audio fills the height.
   ///
   /// A high percentile rather than the maximum. Normalizing to the peak is
-  /// defeated by a single transient — the click as a microphone opens sets the
+  /// defeated by a single transient - the click as a microphone opens sets the
   /// maximum, and everything after it is scaled down against a sample nobody
   /// cares about, which is how a normal recording ends up drawn as a thread.
   ///
@@ -211,7 +211,7 @@ class PeakWaveform extends StatelessWidget {
 }
 
 /// Draws every visible bar in the unplayed color. Repaints only when the data
-/// or the viewport changes — never when the playhead moves.
+/// or the viewport changes - never when the playhead moves.
 class _BodyPainter extends CustomPainter {
   const _BodyPainter({
     required this.window,
@@ -308,7 +308,7 @@ class _PlayheadPainter extends CustomPainter {
 
 /// Shared geometry, so the two passes cannot drift out of alignment.
 ///
-/// Two standardisations happen here, both purely visual — the peaks themselves
+/// Two standardisations happen here, both purely visual - the peaks themselves
 /// are untouched, which is the whole point of the package handing over exact
 /// data and letting the host decide how to draw it.
 void _paintBars(
@@ -335,7 +335,7 @@ void _paintBars(
   }
 
   // One bar per slot, not one per pair. Pairs falling inside a slot are merged
-  // by min-of-mins and max-of-maxes — lossless, and the same reduction the
+  // by min-of-mins and max-of-maxes - lossless, and the same reduction the
   // pyramid uses.
   // The hull is only drawn separately when there is a core to put inside it.
   final hull = window.rms == null

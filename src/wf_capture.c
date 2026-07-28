@@ -27,7 +27,7 @@ struct wf_capture {
   int32_t hop;
 
   // Hop accumulator. Touched only by the audio thread, so it needs no atomics
-  // and it persists across callbacks — a callback rarely delivers a whole
+  // and it persists across callbacks - a callback rarely delivers a whole
   // number of hops.
   int32_t acc_frames;
   int16_t acc_min;

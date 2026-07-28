@@ -13,7 +13,7 @@ import 'ffi_platform.dart'
 
 /// A single reduced window of audio: the extremes of the samples it covers.
 ///
-/// Min/max rather than an average — averaging destroys transients and renders
+/// Min/max rather than an average - averaging destroys transients and renders
 /// speech as a flat sausage.
 typedef MinMax = ({int min, int max});
 
@@ -36,8 +36,8 @@ abstract interface class MonowavePlatform {
   ///
   /// This exists because of web. Native targets resolve their code asset at
   /// startup and have nothing to wait for, but instantiating a WASM module is
-  /// inherently asynchronous. The alternative — making every method return a
-  /// `Future` — would put an event-loop turn in front of [reduceMinMax], which
+  /// inherently asynchronous. The alternative - making every method return a
+  /// `Future` - would put an event-loop turn in front of [reduceMinMax], which
   /// is called once per frame while scrubbing and once per hop while capturing.
   /// One await up front is the cheaper shape.
   ///
@@ -52,7 +52,7 @@ abstract interface class MonowavePlatform {
 
   /// Decodes the audio file at [path] into a peak pyramid.
   ///
-  /// Not available on web, which has no filesystem — use [decodeBytes] there.
+  /// Not available on web, which has no filesystem - use [decodeBytes] there.
   /// Prefer this on native: the decoder streams the file a bucket at a time, so
   /// an audiobook never has to be resident in memory.
   ///
@@ -85,7 +85,7 @@ abstract interface class MonowavePlatform {
   /// Opens a microphone capture session.
   ///
   /// Does not request permission. A headless package has no UI to explain why
-  /// it is asking, and the host does — so this throws [CaptureUnavailable] if
+  /// it is asking, and the host does - so this throws [CaptureUnavailable] if
   /// the permission has not already been granted.
   Future<CaptureSession> openCapture([
     CaptureConfig config = const CaptureConfig(),

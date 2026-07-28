@@ -1,7 +1,7 @@
 // Monokit re-exports `package:flutter/widgets.dart`, so this one import is the
 // whole UI layer. Material is not used anywhere in this app, which is the
 // point: monowave ships no widgets, so a host is free to bring any design
-// system — and every painter here is host code, written to be copied.
+// system - and every painter here is host code, written to be copied.
 
 import 'dart:io';
 

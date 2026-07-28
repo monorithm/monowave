@@ -1,7 +1,7 @@
 // Hand-written rather than ffigen output.
 //
-// The C surface is deliberately tiny — a decode entry point and a handful of
-// accessors — and `@Native` declarations for it are shorter and more readable
+// The C surface is deliberately tiny - a decode entry point and a handful of
+// accessors - and `@Native` declarations for it are shorter and more readable
 // than generated bindings, with the same compile-time checking. Revisit if the
 // surface ever grows past a screenful.
 //

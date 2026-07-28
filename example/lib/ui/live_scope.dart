@@ -30,7 +30,7 @@ class LiveScopeStyle {
   /// Exponent on the amplitude axis. Near-linear, because the meter normalizes.
   ///
   /// This was a decibel curve, added because a linear meter looks dead in a
-  /// quiet room. Decibels fixed that and broke the opposite end — everything
+  /// quiet room. Decibels fixed that and broke the opposite end - everything
   /// above roughly -10 dB flattened to the same height. Normalizing against the
   /// signal's own loudness solves the quiet room without crushing the loud one.
   final double gamma;
@@ -40,7 +40,7 @@ class LiveScopeStyle {
 
   /// Ceiling on normalization, so digital silence does not amplify into noise.
   ///
-  /// Generous, because the percentile reference is what actually adapts — this
+  /// Generous, because the percentile reference is what actually adapts - this
   /// only stops a completely silent input from being multiplied into static.
   /// Set too low it becomes the binding constraint instead, and a quiet room
   /// draws as a row of dots.
@@ -88,7 +88,7 @@ class _ScopePainter extends CustomPainter {
 
   /// The scope is a ring that mutates in place. Keying repaints on its length
   /// works right up until the ring fills, at which point the length stops
-  /// changing and the meter silently freezes — which is exactly what happened.
+  /// changing and the meter silently freezes - which is exactly what happened.
   final int _revision;
 
   @override

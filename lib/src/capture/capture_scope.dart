@@ -6,7 +6,7 @@ typedef CaptureFrame = ({int min, int max, int rms});
 /// A fixed-capacity rolling window of the most recent frames.
 ///
 /// What a live visualizer draws. It is a ring over a preallocated [Int16List]
-/// and it allocates nothing per frame — at 86 frames a second, a growable list
+/// and it allocates nothing per frame - at 86 frames a second, a growable list
 /// would be 86 allocations a second forever, and the garbage would land in the
 /// same frame budget as the painting.
 ///

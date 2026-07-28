@@ -49,7 +49,7 @@ abstract final class Fixtures {
     return samples;
   }
 
-  /// The full pyramid — what the zoomable painter draws from.
+  /// The full pyramid - what the zoomable painter draws from.
   static final WaveformPeaks peaks = WaveformPeaks.fromSamples(
     speech(),
     sampleRate: sampleRate,

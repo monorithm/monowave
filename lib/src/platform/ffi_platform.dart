@@ -18,7 +18,7 @@ MonowavePlatform defaultPlatform() => const FfiMonowavePlatform();
 ///
 /// [WaveformPeaks] hands out views straight into this allocation, so it must
 /// outlive them. The peaks object captures this holder in its dispose closure,
-/// which is what keeps it reachable — drop the peaks and the finalizer runs.
+/// which is what keeps it reachable - drop the peaks and the finalizer runs.
 final class _PeaksHandle implements Finalizable {
   _PeaksHandle(this.pointer) {
     _finalizer.attach(this, pointer.cast(), detach: this);
@@ -79,7 +79,7 @@ class FfiMonowavePlatform implements MonowavePlatform {
   }) async {
     // Off the UI isolate: decoding an hour of audio is seconds of work, and a
     // dropped frame budget is 16 milliseconds. The pyramid stays in native
-    // memory, so only its address crosses back — nothing is copied or
+    // memory, so only its address crosses back - nothing is copied or
     // serialized between isolates.
     final address = await Isolate.run(
       () => _decodeFileToAddress(path, baseSamplesPerPixel),

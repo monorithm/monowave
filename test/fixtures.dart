@@ -98,7 +98,7 @@ Int16List click({int sampleRate = 44100, double seconds = 1}) {
   return Int16List(total)..[total ~/ 2] = 32767;
 }
 
-/// Left near-silent, right loud — the channels must not be averaged together.
+/// Left near-silent, right loud - the channels must not be averaged together.
 Int16List stereo({int sampleRate = 44100, double seconds = 1}) {
   final frames = (sampleRate * seconds).round();
   final samples = Int16List(frames * 2);

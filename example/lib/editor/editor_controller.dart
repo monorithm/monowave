@@ -8,7 +8,7 @@ import 'package:monowave/monowave.dart';
 /// Everything the editor screen holds.
 ///
 /// A [ChangeNotifier] rather than anything larger: the point of the example is
-/// to show how little a host has to keep. monowave holds none of it — peaks are
+/// to show how little a host has to keep. monowave holds none of it - peaks are
 /// values, a document is a list of ranges, and undo is a stack of documents.
 class EditorController extends ChangeNotifier {
   EditorController({required this.source, required WaveformPeaks peaks})
@@ -27,7 +27,7 @@ class EditorController extends ChangeNotifier {
 
   /// Playback lives entirely in the host.
   ///
-  /// monowave never sees the player — `WaveformTimeline` maps a `Duration` to a
+  /// monowave never sees the player - `WaveformTimeline` maps a `Duration` to a
   /// sample and back, and that is the whole of its relationship with playback.
   /// Swapping `just_audio` for `media_kit` would touch this file and nothing
   /// else.
@@ -99,8 +99,8 @@ class EditorController extends ChangeNotifier {
 
   /// Plays what the document currently describes.
   ///
-  /// An edited document has no file behind it — the edit list is the only
-  /// record of it — so previewing one means rendering it first. That is the
+  /// An edited document has no file behind it - the edit list is the only
+  /// record of it - so previewing one means rendering it first. That is the
   /// same exporter the Export button uses, which is what makes the preview
   /// trustworthy rather than an approximation.
   Future<void> togglePlay() async {

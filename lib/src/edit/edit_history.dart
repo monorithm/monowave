@@ -4,7 +4,7 @@ import 'waveform_document.dart';
 ///
 /// Snapshots rather than inverse operations, following the same reasoning
 /// monolens's `EditHistory` uses: undo is cheap precisely because an edit is a
-/// value. There is nothing to invert, and some edits have no inverse anyway —
+/// value. There is nothing to invert, and some edits have no inverse anyway -
 /// a fade destroys the samples it fades.
 ///
 /// A document is a handful of regions, so a snapshot costs nothing. A hundred
@@ -36,7 +36,7 @@ class EditHistory {
 
   /// Applies [edit] and pushes the result.
   ///
-  /// Anything that had been undone is discarded — the usual branch-and-forget
+  /// Anything that had been undone is discarded - the usual branch-and-forget
   /// behaviour, because keeping a tree would need UI nobody asked for.
   WaveformDocument apply(WaveformEdit edit) {
     final next = current.applying(edit);

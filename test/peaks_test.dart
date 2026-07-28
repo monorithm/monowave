@@ -30,7 +30,7 @@ void main() {
       expect(peaks.view(0), [1, 4, 100, 100]);
     });
 
-    test('does not average — a lone transient survives', () {
+    test('does not average - a lone transient survives', () {
       // The failure this guards against: averaging would render this bucket as
       // near-silence, which is exactly how a click or a plosive disappears.
       final samples = Int16List(128)..[64] = 32000;

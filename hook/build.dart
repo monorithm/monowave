@@ -33,7 +33,7 @@ void main(List<String> args) async {
     if (!input.config.buildCodeAssets) return;
 
     // miniaudio reaches AVAudioSession on Apple platforms, so its translation
-    // unit has to be compiled as Objective-C — as plain C it fails inside
+    // unit has to be compiled as Objective-C - as plain C it fails inside
     // Foundation's own headers. Objective-C is a strict superset of C, so the
     // rest of the core compiles unchanged under it and one builder still covers
     // every target.
@@ -46,7 +46,7 @@ void main(List<String> args) async {
     // the math functions implicitly, which is why this was invisible until the
     // library was dlopen'd on a real Android device: miniaudio and dr_mp3 both
     // reference `pow`, and without this the whole library fails to load with
-    // "cannot locate symbol" — not a missing-function error, a missing-library
+    // "cannot locate symbol" - not a missing-function error, a missing-library
     // one.
     final needsLibm = switch (input.config.code.targetOS) {
       OS.android || OS.linux => true,

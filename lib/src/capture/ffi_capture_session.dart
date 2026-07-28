@@ -225,7 +225,7 @@ class FfiCaptureSession implements CaptureSession {
   /// Drives the audio-thread path with synthetic interleaved PCM.
   ///
   /// This is the same entry point the device callback uses, so a test exercises
-  /// the real reduction, the real ring and the real history buffer — just
+  /// the real reduction, the real ring and the real history buffer - just
   /// without a microphone or a permission prompt. It is why the realtime path
   /// is testable in CI on every platform.
   void feedSynthetic(Int16List interleaved) {

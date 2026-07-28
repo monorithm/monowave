@@ -4,7 +4,7 @@ Monowave is Monorithm's headless audio package for Flutter: microphone capture, 
 
 Headless is the organizing constraint, the same way it is in [monolens](https://github.com/monorithm/monolens). The package exports no widget. Capture hands back reduced frames; a decode hands back a zero-copy view over min/max peaks and the viewport math to place them. **The host writes the painter.**
 
-> **Status: 0.2.0, unpublished.** Decoding, live capture, rendering and non-destructive editing with export all work on the five native targets. Web has everything except capture — see [docs/architecture.md](docs/architecture.md) for why, and for the decisions behind the rest of the shape.
+> **Status: 0.3.0, unpublished.** Decoding, live capture, rendering and non-destructive editing with export all work on the five native targets. Web has everything except capture - see [doc/architecture.md](doc/architecture.md) for why, and for the decisions behind the rest of the shape.
 
 ## Why it exists
 

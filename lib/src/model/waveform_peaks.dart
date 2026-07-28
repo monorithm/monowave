@@ -27,7 +27,7 @@ class WaveformPeaks {
   }) : _rms = rms, // ignore: prefer_initializing_formals
        _onDispose = onDispose; // ignore: prefer_initializing_formals
 
-  /// Wraps levels that were built elsewhere — by the C core, over memory it
+  /// Wraps levels that were built elsewhere - by the C core, over memory it
   /// still owns.
   ///
   /// [onDispose] releases that memory. It also keeps whatever owns the
@@ -93,7 +93,7 @@ class WaveformPeaks {
 
   /// The interleaved `[min, max, ...]` data at [level].
   ///
-  /// Zero-copy and not defensively copied — treat it as read-only. Writing to
+  /// Zero-copy and not defensively copied - treat it as read-only. Writing to
   /// it corrupts every level built above it. When these peaks came from the C
   /// core, this is a view straight into native memory, which is why a
   /// three-hour recording never reaches the Dart heap.
@@ -107,7 +107,7 @@ class WaveformPeaks {
   /// One RMS value per pair at [level], or null if none was computed.
   ///
   /// Peaks say how far the audio went; RMS says how much of it there was.
-  /// Drawing both — a peak hull with an RMS core inside it — is what makes a
+  /// Drawing both - a peak hull with an RMS core inside it - is what makes a
   /// waveform read as a shape rather than as its outliers.
   ///
   /// Null for pyramids built in Dart from raw samples, which have no reason to
@@ -186,7 +186,7 @@ class WaveformPeaks {
     );
   }
 
-  /// Builds a pyramid from peaks that were computed elsewhere — by the C core,
+  /// Builds a pyramid from peaks that were computed elsewhere - by the C core,
   /// or server-side by BBC `audiowaveform`.
   ///
   /// [base] is interleaved `[min, max, ...]` at [baseSamplesPerPixel].

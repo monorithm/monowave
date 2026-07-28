@@ -144,7 +144,7 @@ void main() {
     });
 
     test('a single-sample click survives a 128-sample bucket', () async {
-      // An average would render this as 256 — indistinguishable from silence.
+      // An average would render this as 256 - indistinguishable from silence.
       final peaks = await platform.decodeBytes(fixtures.wav(fixtures.click()));
       addTearDown(peaks.dispose);
 

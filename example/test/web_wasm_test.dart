@@ -10,7 +10,7 @@
 // NOT YET GREEN LOCALLY. The chrome platform runner hangs with no output on
 // this machine; the same assertions were verified by hand in a browser against
 // the built example. CI is the next place to find out whether that is a local
-// Chrome problem or a real one — treat the `web` job as unproven until it runs.
+// Chrome problem or a real one - treat the `web` job as unproven until it runs.
 @TestOn('browser')
 library;
 

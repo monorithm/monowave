@@ -3,7 +3,7 @@
 /// `monolens/example` keeps a `LensIcons` set for exactly this reason: a design
 /// system's catalogue is general, and an editor needs a few marks that are
 /// specific to editing. Substituting a near-enough glyph is worse than drawing
-/// the right one — an `arrowRight` standing in for undo reads as "forward",
+/// the right one - an `arrowRight` standing in for undo reads as "forward",
 /// which is the opposite of what it does.
 library;
 

@@ -163,15 +163,15 @@ AudioWorklets are opt-in behind `MA_ENABLE_AUDIO_WORKLETS`, and *those* need `-s
 
 But the blocking problem is a different one.
 Either way, miniaudio's web backend needs emscripten's JavaScript runtime, and monowave's artifact is deliberately `-sSTANDALONE_WASM --no-entry` with no JS glue at all.
-Adopting it would mean a second, differently-built WASM module, `ASYNCIFY` overhead, and a larger artifact — one that ships on all six targets even though only web reads it.
+Adopting it would mean a second, differently-built WASM module, `ASYNCIFY` overhead, and a larger artifact - one that ships on all six targets even though only web reads it.
 
 **Decision: web capture will be a small AudioWorklet written directly against the browser's own APIs, not miniaudio.**
 The browser already provides `getUserMedia` and `AudioWorklet`; miniaudio's value on native is that it abstracts five different backends, and on web there is only one.
-The reduction it would be doing is a min and a max over int16 values — integer comparisons, perhaps fifteen lines of JavaScript.
+The reduction it would be doing is a min and a max over int16 values - integer comparisons, perhaps fifteen lines of JavaScript.
 
 This is the one place monowave does not run the same C on every target, so it is worth being precise about what that costs.
 For decoding, identical peaks matter enormously: a stored waveform has to look the same on every client, which is what the determinism job polices.
-For capture, the reduction is `min` and `max` over integers, which is exact in both languages by construction rather than by luck — there is no floating point in the path where a last bit could differ.
+For capture, the reduction is `min` and `max` over integers, which is exact in both languages by construction rather than by luck - there is no floating point in the path where a last bit could differ.
 The claim is testable, and when web capture lands it should be tested the same way `tool/verify_wasm.mjs` tests decoding.
 
 **Status: not implemented.** Decode and rendering work on web today; capture does not, and `WasmMonowavePlatform.openCapture` throws rather than pretending otherwise.
@@ -207,7 +207,7 @@ The source is read exactly once, at export.
 That buys two things that would otherwise be awkward.
 
 `previewPeaks` derives the edited waveform by concatenating slices of the source's finest level and scaling by gain, so the display updates the instant an edit lands rather than after a decode.
-And undo stores whole documents rather than inverse operations, which is the same call [monolens](https://github.com/monorithm/monolens)'s `EditHistory` makes and for the same reason: undo is cheap precisely because an edit is a value, there is nothing to invert, and some edits have no inverse at all — a fade destroys the samples it fades.
+And undo stores whole documents rather than inverse operations, which is the same call [monolens](https://github.com/monorithm/monolens)'s `EditHistory` makes and for the same reason: undo is cheap precisely because an edit is a value, there is nothing to invert, and some edits have no inverse at all - a fade destroys the samples it fades.
 A document is a handful of regions, so a hundred steps of history on a heavily cut file is still a few kilobytes.
 
 Export writes 16-bit PCM WAV and only WAV.
@@ -238,7 +238,7 @@ WAV, MP3 and FLAC, via the dr_libs single-header decoders.
 miniaudio is deliberately not vendored yet: decoding needs only dr_libs, and miniaudio arrives in M3 when capture does.
 
 **AAC/M4A is not supported.**
-It needs either a platform decoder — which would mean six implementations and the drift this architecture exists to avoid — or a much heavier dependency.
+It needs either a platform decoder - which would mean six implementations and the drift this architecture exists to avoid - or a much heavier dependency.
 That is a real gap, because it is what `record` produces by default on iOS.
 It is tolerable for one reason: the voice-note path never decodes at all.
 The sender computes peaks at record time and ships them as metadata, so the common case never meets a decoder.
@@ -284,4 +284,4 @@ Between them, one C source reached over two entirely different bindings on four 
 
 The hash is FNV-1a, and two details of it were bugs first.
 It hashes int16 *values* in explicit little-endian order rather than a byte view, so it does not depend on host endianness.
-And it is 32-bit with a shift-decomposed multiply rather than 64-bit, because Dart integers are 64-bit on the VM but doubles on web — a 64-bit FNV silently produces different numbers under `dart2js`, which would have made the check meaningless on the one target it exists to police.
+And it is 32-bit with a shift-decomposed multiply rather than 64-bit, because Dart integers are 64-bit on the VM but doubles on web - a 64-bit FNV silently produces different numbers under `dart2js`, which would have made the check meaningless on the one target it exists to police.

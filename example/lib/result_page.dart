@@ -6,7 +6,7 @@ import 'package:monowave/monowave.dart';
 import 'editor/waveform_canvas.dart';
 
 /// What came out. Decodes the exported file back through the C core rather than
-/// reusing the peaks that produced it — the point is that the file on disk is
+/// reusing the peaks that produced it - the point is that the file on disk is
 /// real, not that the preview looked right.
 class ResultPage extends StatefulWidget {
   const ResultPage({required this.path, super.key});

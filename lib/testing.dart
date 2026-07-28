@@ -2,7 +2,7 @@
 ///
 /// A host's tests should not need a microphone, an audio file, or a native
 /// core, so every seam monowave exposes has a fake here. Import this from
-/// `test/` only — it is deliberately not part of
+/// `test/` only - it is deliberately not part of
 /// `package:monowave/monowave.dart`.
 library;
 
@@ -149,8 +149,8 @@ class FakeMonowavePlatform implements MonowavePlatform {
 
 /// A [CaptureSession] that never touches a microphone.
 ///
-/// Drives the same state a real session does — recording flag, frame stream,
-/// rolling scope, drop counters — so a host's visualizer can be exercised in a
+/// Drives the same state a real session does - recording flag, frame stream,
+/// rolling scope, drop counters - so a host's visualizer can be exercised in a
 /// widget test. Frames arrive when a test calls [emit] or [emitTone] rather
 /// than when an audio thread produces them, which makes the timing exact
 /// instead of merely likely.

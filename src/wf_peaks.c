@@ -52,7 +52,7 @@ void wf_pair_builder_push(wf_pair_builder *builder, int16_t lo, int16_t hi,
   if (builder->failed) return;
 
   if (builder->count == builder->capacity) {
-    // Doubling, starting at 4096 pairs — about twelve seconds of audio at a
+    // Doubling, starting at 4096 pairs - about twelve seconds of audio at a
     // 128-sample base, so short files never reallocate at all.
     int64_t next = builder->capacity == 0 ? 4096 : builder->capacity * 2;
     int16_t *grown =

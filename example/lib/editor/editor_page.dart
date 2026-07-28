@@ -11,7 +11,7 @@ import 'waveform_canvas.dart';
 /// Review and trim. Pops the exported file's path, or null if abandoned.
 ///
 /// The waveform is the subject, so it gets the space and everything else is
-/// sized against it. Trim actions are contextual — they appear with a selection
+/// sized against it. Trim actions are contextual - they appear with a selection
 /// and leave with it, rather than sitting greyed out claiming a third of the
 /// screen for something you cannot do yet.
 class EditorPage extends StatefulWidget {
@@ -490,7 +490,7 @@ class _ScrubBar extends StatelessWidget {
 }
 
 /// Appears with a selection. States what is selected, then what can be done
-/// to it — in that order, because the answer to "delete what?" has to be on
+/// to it - in that order, because the answer to "delete what?" has to be on
 /// screen next to the button that does it.
 class _TrimBar extends StatelessWidget {
   const _TrimBar({required this.controller, required this.selection});

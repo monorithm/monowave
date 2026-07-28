@@ -61,7 +61,7 @@ class WaveformTimeline {
 
   /// The time at [progress] through the audio, where [progress] runs 0 to 1.
   ///
-  /// The inverse of [progressAt] — what a fixed-bar voice note needs, since it
+  /// The inverse of [progressAt] - what a fixed-bar voice note needs, since it
   /// has no zoom and its x axis *is* progress.
   Duration timeAtProgress(double progress) =>
       timeAt(progress.clamp(0.0, 1.0) * lengthInSamples);

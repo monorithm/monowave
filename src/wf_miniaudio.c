@@ -4,7 +4,7 @@
 // dragged into every file that needs a device handle.
 //
 // Everything above the device layer is switched off. monowave needs miniaudio
-// for one thing — a capture callback fed by the platform's audio backend — and
+// for one thing - a capture callback fed by the platform's audio backend - and
 // its decoding, encoding, resource manager, node graph and engine would all be
 // dead weight in an artifact that ships on six targets. Decoding in particular
 // is already handled by dr_libs in `wf_decode.c`.

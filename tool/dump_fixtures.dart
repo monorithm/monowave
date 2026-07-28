@@ -1,5 +1,5 @@
 // Writes the synthesized fixtures to a directory, for tools that cannot call
-// into Dart — chiefly `tool/verify_wasm.mjs`.
+// into Dart - chiefly `tool/verify_wasm.mjs`.
 //
 //   dart run tool/dump_fixtures.dart build/fixtures
 //

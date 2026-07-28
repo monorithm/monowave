@@ -1,7 +1,7 @@
 /// Headless audio capture, waveform peaks, and non-destructive editing.
 ///
 /// Monowave exports no widget, and nothing under `lib/` imports
-/// `package:flutter/widgets.dart`, `material.dart` or `cupertino.dart` — CI
+/// `package:flutter/widgets.dart`, `material.dart` or `cupertino.dart` - CI
 /// enforces that with a grep. Peaks come back as a zero-copy view plus the
 /// viewport math to place them; the host writes the painter.
 ///

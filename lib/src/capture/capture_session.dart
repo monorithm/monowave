@@ -19,7 +19,7 @@ class CaptureConfig {
   final int sampleRate;
   final int channels;
 
-  /// Samples per reduced frame. 512 at 44.1 kHz is about 86 frames a second —
+  /// Samples per reduced frame. 512 at 44.1 kHz is about 86 frames a second -
   /// comfortably above a 60 Hz display and small enough that the ring stays
   /// tiny.
   final int hop;
@@ -50,7 +50,7 @@ class CaptureConfig {
   /// ever copies into them; this side writes the file, because file I/O on an
   /// audio callback is exactly the unbounded operation that produces a glitch.
   ///
-  /// The result is 16-bit PCM WAV, which is also what the exporter reads — so a
+  /// The result is 16-bit PCM WAV, which is also what the exporter reads - so a
   /// recording can be trimmed and exported without a second format in play.
   final String? recordTo;
 

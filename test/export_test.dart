@@ -159,7 +159,7 @@ void main() {
     final original = await source();
     addTearDown(original.dispose);
 
-    // Keep the second half, then the first — a reordering the region list can
+    // Keep the second half, then the first - a reordering the region list can
     // express and a single trim cannot.
     final reordered = WaveformDocument([
       WaveformRegion(sourceStart: _sampleRate, sourceEnd: _total),

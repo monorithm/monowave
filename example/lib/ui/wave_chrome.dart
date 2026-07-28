@@ -50,7 +50,7 @@ class WaveRoute<T> extends PageRouteBuilder<T> {
 
 /// A monospaced clock.
 ///
-/// Tabular by construction, so the digits do not jitter as they tick — the
+/// Tabular by construction, so the digits do not jitter as they tick - the
 /// most visible sign of an unconsidered timer.
 class WaveClock extends StatelessWidget {
   const WaveClock({
@@ -168,7 +168,7 @@ class WaveRailItem<T> {
 /// The bottom tool rail: icon over label, one per tool, selected one tinted.
 ///
 /// The same shape `monolens/example` uses. A rail rather than a row of buttons
-/// because the items are modes, not actions — picking one changes what the
+/// because the items are modes, not actions - picking one changes what the
 /// tray above shows rather than doing something immediately.
 class WaveRail<T> extends StatelessWidget {
   const WaveRail({

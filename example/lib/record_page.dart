@@ -11,7 +11,7 @@ import 'ui/wave_chrome.dart';
 /// Full-screen capture. Pops the recorded file's path, or null if cancelled.
 ///
 /// The scope is the subject here, so it gets the middle of the screen and the
-/// controls sit under it — the inverse of the front door, where the controls
+/// controls sit under it - the inverse of the front door, where the controls
 /// are the subject.
 class RecordPage extends StatefulWidget {
   const RecordPage({super.key});
@@ -283,7 +283,7 @@ class _RecordPageState extends State<RecordPage> {
     }
     final lost = session.dropped + session.pcmDropped;
     return lost == 0
-        ? 'Nothing dropped — the ring is keeping up.'
+        ? 'Nothing dropped - the ring is keeping up.'
         : '${session.dropped} frames and ${session.pcmDropped} samples dropped.';
   }
 }

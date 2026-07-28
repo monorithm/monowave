@@ -4,14 +4,33 @@ All notable changes to monowave are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 follows [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 0.3.0
+
+Capture keeps the audio, the pyramid carries loudness, and the native core
+actually loads on Android - which it never had.
+
+### Added
+
+- **RMS through the pyramid.** Peaks say how far the audio went; RMS says how
+  much of it there was. `WaveformPeaks.rms(level)` and `PeakWindow.rmsAt(i)`
+  expose it, and coarser levels combine children as the root of the mean of
+  their squares so the value stays an RMS rather than an average of averages.
+  Costs 50% more pyramid memory.
+- **Capture keeps the audio.** A second lock-free ring carries raw PCM
+  alongside the reduced frames, and `CaptureConfig.recordTo` streams it to a
+  16-bit WAV. Separate rings because they run at 86/sec against 44,100/sec and
+  a dropped frame is cosmetic where a dropped sample is a hole.
+  `CaptureSession.pcmDropped` is reported separately for that reason.
+- **`CaptureSession.pause` and `resume`**, which stop the device without
+  touching the rings, the accumulator or the history, so a take continues
+  rather than restarting.
 
 ### Fixed: the native core never loaded on Android
 
 `libmonowave.so` was bundled correctly in every APK since M0 and failed to
 `dlopen` on every one of them: `cannot locate symbol "pow"`. miniaudio and
 dr_mp3 both reference it, Apple's libSystem provides the math functions
-implicitly, and Android and Linux do not — so `libraries: ['m']` was missing
+implicitly, and Android and Linux do not - so `libraries: ['m']` was missing
 from the build hook.
 
 M0 claimed Android was verified. What it actually verified was that the library
@@ -150,7 +169,7 @@ rather than a dropped frame.
   sample hop that is about 516 bytes a second instead of 176 kB.
 - **`wf_capture_feed` is public**, and it is the entry point the device callback
   wraps. That is what makes the realtime path testable on every platform with
-  no microphone, no permission prompt and exact timing — 17 tests drive it with
+  no microphone, no permission prompt and exact timing - 17 tests drive it with
   synthetic PCM.
 - **A preallocated history buffer**, so `stop()` returns peaks for the whole
   take even if the consumer never drained. Growing it from the audio thread is
@@ -168,9 +187,9 @@ rather than a dropped frame.
   blocking the producer to wait for room would stall the audio device.
 - **Web capture is not implemented**, and when it lands it will not use
   miniaudio. M0's assumption that it would need `SharedArrayBuffer` turned out
-  to be wrong twice over; see docs/architecture.md for what replaced it.
+  to be wrong twice over; see doc/architecture.md for what replaced it.
 - miniaudio must be compiled as Objective-C on Apple platforms, and
-  `Language.objectiveC` only adds `-framework` flags — clang picks the language
+  `Language.objectiveC` only adds `-framework` flags - clang picks the language
   from the file extension, so there is a one-line `wf_miniaudio.m` that includes
   the `.c`.
 - The example declares the microphone permission on every platform, but

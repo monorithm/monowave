@@ -28,7 +28,7 @@ void main() {
     expect(timeline.progressAt(const Duration(seconds: 10)), 1);
   });
 
-  test('progress maps back to time — the fixed-bar voice note case', () {
+  test('progress maps back to time - the fixed-bar voice note case', () {
     expect(timeline.timeAtProgress(0.25), const Duration(milliseconds: 2500));
     expect(timeline.timeAtProgress(-1), Duration.zero);
     expect(timeline.timeAtProgress(2), const Duration(seconds: 10));

@@ -1,7 +1,7 @@
 // The realtime path, driven with synthetic PCM through the same entry point a
 // microphone drives.
 //
-// No device, no permission prompt, and deterministic — which is what lets the
+// No device, no permission prompt, and deterministic - which is what lets the
 // hardest part of monowave be tested on every platform in CI rather than only
 // by hand on a phone.
 
@@ -49,7 +49,7 @@ void main() {
       final session = await _session();
 
       // Three hops delivered as one block, then a fourth as three ragged
-      // blocks — a real device does both.
+      // blocks - a real device does both.
       session.feedSynthetic(_tone(_hop * 3));
       session.feedSynthetic(_tone(200));
       session.feedSynthetic(_tone(200));

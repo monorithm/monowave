@@ -77,7 +77,7 @@ const names = readdirSync('build/fixtures')
   .sort();
 
 if (names.length === 0) {
-  console.error('no fixtures found — run: dart run tool/dump_fixtures.dart build/fixtures');
+  console.error('no fixtures found - run: dart run tool/dump_fixtures.dart build/fixtures');
   process.exit(1);
 }
 

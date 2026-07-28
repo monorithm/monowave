@@ -6,7 +6,7 @@ import '../model/waveform_timeline.dart';
 
 /// A slice of the source, with what to do to it on the way out.
 ///
-/// Regions never hold audio — only a range in the source and a few numbers. An
+/// Regions never hold audio - only a range in the source and a few numbers. An
 /// edit is a value, which is what makes both undo and preview cheap.
 class WaveformRegion {
   const WaveformRegion({

@@ -43,7 +43,7 @@ extension type _Wasi._(JSObject _o) implements JSObject {
 
 /// `-sALLOW_MEMORY_GROWTH` makes the module import this so JS can refresh its
 /// cached heap views. Monowave re-reads the buffer on every call instead, so the
-/// callback does nothing — but the import must still be satisfied or
+/// callback does nothing - but the import must still be satisfied or
 /// instantiation throws.
 extension type _Env._(JSObject _o) implements JSObject {
   external factory _Env({JSFunction emscripten_notify_memory_growth});
@@ -257,7 +257,7 @@ class WasmMonowavePlatform implements MonowavePlatform {
     'Capture is not implemented on web yet. It will not go through miniaudio '
     'when it is: the browser already provides getUserMedia and AudioWorklet, '
     'and miniaudio would drag emscripten\'s JS runtime into an artifact that '
-    'is deliberately standalone. See docs/architecture.md. Decode and '
+    'is deliberately standalone. See doc/architecture.md. Decode and '
     'rendering work on web today.',
   );
 
@@ -266,7 +266,7 @@ class WasmMonowavePlatform implements MonowavePlatform {
   ///
   /// This is deliberate and it is the one place web pays more than native.
   /// Growing the heap detaches every view over it, so a long-lived view would
-  /// stay correct only until the next allocation anywhere in the module — an
+  /// stay correct only until the next allocation anywhere in the module - an
   /// aliasing bug that would surface as corrupt peaks much later. Copying costs
   /// a few hundred kilobytes for a normal recording; native keeps the zero-copy
   /// path, which is what an audiobook needs.

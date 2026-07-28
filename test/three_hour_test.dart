@@ -17,8 +17,8 @@ const _totalSamples = _sampleRate * 60 * 60 * _hours; // 476,280,000
 
 /// A realistic three-hour pyramid, built without a 952 MB sample buffer.
 ///
-/// The base level is synthesized directly — 3.7 million min/max pairs, about
-/// 15 MB — because reducing half a billion samples in Dart would measure the
+/// The base level is synthesized directly - 3.7 million min/max pairs, about
+/// 15 MB - because reducing half a billion samples in Dart would measure the
 /// test harness rather than the thing under test.
 WaveformPeaks _threeHours() {
   final pairs = _totalSamples ~/ _base;
@@ -88,7 +88,7 @@ void main() {
         lessThanOrEqualTo(width.toInt() * 2),
         reason:
             'at $spp samples/pixel the window held ${window.pairCount} '
-            'pairs for $width pixels — the level lookup is not working',
+            'pairs for $width pixels - the level lookup is not working',
       );
     }
   });

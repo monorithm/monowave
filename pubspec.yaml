@@ -1,6 +1,6 @@
 name: monowave
-description: "Headless audio capture, waveform peaks, and non-destructive editing for Flutter — one C core across all six Flutter targets."
-version: 0.2.0
+description: "Headless audio for Flutter: microphone capture, waveform peaks, and non-destructive editing, from one C core across all six Flutter targets."
+version: 0.3.0
 homepage: https://github.com/monorithm/monowave
 repository: https://github.com/monorithm/monowave
 topics:
@@ -38,7 +38,7 @@ dev_dependencies:
   # what let the engine suite run under `dart test` in seconds.
   test: ^1.25.15
 
-# No `flutter: plugin:` block. monowave has no platform plugin classes — the
+# No `flutter: plugin:` block. monowave has no platform plugin classes - the
 # native side is a code asset built by `hook/build.dart` and reached over FFI,
 # not a registered plugin reached over a method channel. See docs/architecture.md.
 flutter:

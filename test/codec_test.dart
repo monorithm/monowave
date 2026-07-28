@@ -157,7 +157,7 @@ void main() {
       expect(heights.reduce(math.max), 1.0);
     });
 
-    group('fromAmplitudes — the live capture path', () {
+    group('fromAmplitudes - the live capture path', () {
       test('folds an arbitrary number of hops into fixed bars', () {
         final amplitudes = [for (var i = 0; i < 500; i++) i / 500];
 
