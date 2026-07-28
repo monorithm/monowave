@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:monokit/monokit.dart';
 import 'package:monowave/monowave.dart';
 
@@ -8,12 +10,30 @@ class LiveScopeStyle {
     required this.idle,
     this.barFraction = 0.55,
     this.minBarHeight = 2.0,
+    this.floorDb = -50,
   });
 
   final Color active;
   final Color idle;
   final double barFraction;
   final double minBarHeight;
+
+  /// Silence floor for the decibel curve, in dB.
+  ///
+  /// A live meter has to be drawn on a decibel scale or it reads as broken.
+  /// Room tone sits near 1% of full scale, which is a two-pixel bar on a linear
+  /// axis — the same trap `CompactBars` avoids for the fixed-bar case, and the
+  /// reason a linear meter looks dead while the microphone is working fine.
+  final double floorDb;
+}
+
+final _ln10 = math.log(10);
+
+/// Maps a 0..1 amplitude onto a 0..1 height through a decibel curve.
+double _curve(double amplitude, double floorDb) {
+  if (amplitude <= 0) return 0;
+  final db = 20 * math.log(amplitude) / _ln10;
+  return ((db - floorDb) / -floorDb).clamp(0.0, 1.0);
 }
 
 /// The live recording visualizer: a bar per captured hop, newest at the right.
@@ -79,7 +99,7 @@ class _ScopePainter extends CustomPainter {
     final paint = Paint()..color = style.active;
 
     for (var i = 0; i < scope.length; i++) {
-      final amplitude = scope.amplitudeAt(i);
+      final amplitude = _curve(scope.amplitudeAt(i), style.floorDb);
       var barHeight = amplitude * size.height;
       if (barHeight < style.minBarHeight) barHeight = style.minBarHeight;
 

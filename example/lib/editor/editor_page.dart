@@ -72,6 +72,8 @@ class _EditorPageState extends State<EditorPage> {
                 ),
               ),
               const Spacer(),
+              _Transport(controller: _controller),
+              SizedBox(height: theme.spacing.lg),
               _Tools(controller: _controller),
               SizedBox(height: theme.spacing.lg),
               MonoButton.icon(
@@ -193,6 +195,59 @@ class _CanvasState extends State<_Canvas> {
           ),
         );
       },
+    );
+  }
+}
+
+/// Play and scrub. The player is `just_audio`; monowave never sees it.
+class _Transport extends StatelessWidget {
+  const _Transport({required this.controller});
+
+  final EditorController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = MonokitTheme.of(context);
+
+    return Row(
+      children: <Widget>[
+        WaveChromeButton(
+          diameter: 64,
+          tone: WaveTone.accent,
+          semanticLabel: controller.isPlaying ? 'Pause' : 'Play',
+          onPressed: controller.isPreparing ? null : controller.togglePlay,
+          child: controller.isPreparing
+              ? const MonoSpinner(size: 20)
+              : MonoIcon(
+                  controller.isPlaying ? MonoIcons.pause : MonoIcons.play,
+                  size: 26,
+                ),
+        ),
+        SizedBox(width: theme.spacing.lg),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                WaveClock.format(controller.position),
+                style: theme.typography.mono.copyWith(
+                  fontSize: 18,
+                  color: theme.colors.foreground,
+                ),
+              ),
+              SizedBox(height: theme.spacing.xs),
+              Text(
+                controller.isPreparing
+                    ? 'Rendering the edit to preview it...'
+                    : 'of ${WaveClock.format(controller.duration)}',
+                style: theme.typography.bodyMedium.copyWith(
+                  color: theme.colors.foregroundMuted,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
