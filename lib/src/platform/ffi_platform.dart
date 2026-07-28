@@ -124,10 +124,11 @@ class FfiMonowavePlatform implements MonowavePlatform {
         ),
     ];
 
-    // Deliberately NOT in an isolate. See the note on _decodeFileToAddress:
-    // native-asset symbols do not resolve in an isolate spawned with
-    // Isolate.run on Android.
-    final code = _exportToPath(sourcePath, outputPath, regions);
+    // Off the UI isolate, like decoding: exporting an hour of audio reads the
+    // whole file through the decoder.
+    final code = await Isolate.run(
+      () => _exportToPath(sourcePath, outputPath, regions),
+    );
     if (code != 0) {
       throw MonowaveDecodeException(switch (code) {
         1 => DecodeFailure.unreadable,

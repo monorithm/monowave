@@ -3,53 +3,44 @@
 // supplies the data.
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:monokit/monokit.dart';
 import 'package:monowave/monowave.dart';
 import 'package:monowave_example/fixtures.dart';
 import 'package:monowave_example/main.dart';
-import 'package:monowave_example/painters/live_scope.dart';
 
 void main() {
-  testWidgets('starts idle, with the waveform already the hero', (
-    tester,
-  ) async {
-    await tester.pumpWidget(const MonowaveExample());
+  testWidgets('the front door names what the package does', (tester) async {
+    await tester.pumpWidget(const MonowaveExampleApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('Voice memo'), findsOneWidget);
+    expect(find.text('monowave'), findsOneWidget);
+    expect(find.text('0.2.0'), findsOneWidget);
     expect(find.text('Record'), findsOneWidget);
-    // The scope holds its place even before anything is captured, so the
-    // layout does not jump when recording starts.
-    expect(find.byType(LiveScope), findsOneWidget);
-    expect(find.text('00:00.0'), findsOneWidget);
+    expect(find.text('Open the bundled sample'), findsOneWidget);
   });
 
-  testWidgets('loading the sample moves to review with transport controls', (
+  testWidgets('the capability cloud states the editor surface', (tester) async {
+    await tester.pumpWidget(const MonowaveExampleApp());
+    await tester.pumpAndSettle();
+
+    expect(find.text('IN THE EDITOR'), findsOneWidget);
+    for (final capability in <String>['Capture', 'Trim', 'Export WAV']) {
+      expect(find.text(capability), findsOneWidget);
+    }
+  });
+
+  testWidgets('recording pushes a full screen with its own chrome', (
     tester,
   ) async {
-    await tester.pumpWidget(const MonowaveExample());
+    await tester.pumpWidget(const MonowaveExampleApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Load a sample instead'));
+    await tester.tap(find.text('Record'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Play'), findsOneWidget);
-    expect(find.text('Export WAV'), findsOneWidget);
-    // Six seconds of fixture.
-    expect(find.text('00:06.0'), findsOneWidget);
-    // Trim actions exist but are inert until something is selected.
-    expect(find.text('Keep selection'), findsOneWidget);
-  });
-
-  testWidgets('playing advances the clock', (tester) async {
-    await tester.pumpWidget(const MonowaveExample());
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Load a sample instead'));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Play'));
-    await tester.pump(const Duration(milliseconds: 500));
-
-    expect(find.text('Pause'), findsOneWidget);
+    // The record screen owns the title; the front door does not.
+    expect(find.widgetWithText(MonoScreenHeader, 'Record'), findsOneWidget);
+    expect(find.text('00:00.0'), findsOneWidget);
   });
 
   test('the bundled sample is six seconds and summarizes to 64 bytes', () {
