@@ -43,6 +43,15 @@ struct wf_capture {
   _Atomic long long dropped;
   _Atomic long long produced;
 
+  // Raw audio, in its own ring. Kept separately from the reduction because the
+  // two have completely different rates and the visualizer must not be starved
+  // by a slow file write.
+  int16_t *pcm;
+  int32_t pcm_mask;
+  _Atomic int32_t pcm_head;
+  _Atomic int32_t pcm_tail;
+  _Atomic long long pcm_dropped;
+
   // Preallocated history, so stop() can answer even if the consumer never
   // drained. Growing this from the audio thread is not an option.
   int16_t *take;
@@ -121,11 +130,37 @@ static void wf_emit(wf_capture *capture) {
   wf_acc_reset(capture);
 }
 
+/// Copies raw samples into the PCM ring. One-by-one rather than two memcpys
+/// because the branch is predictable and the wrap logic stays obvious; this is
+/// still just a copy, with no allocation and no lock.
+static void wf_pcm_push(wf_capture *capture, const int16_t *samples,
+                        int32_t count) {
+  if (capture->pcm == NULL) return;
+
+  int32_t head = atomic_load_explicit(&capture->pcm_head, memory_order_relaxed);
+  const int32_t tail =
+      atomic_load_explicit(&capture->pcm_tail, memory_order_acquire);
+
+  for (int32_t i = 0; i < count; i++) {
+    const int32_t next = (head + 1) & capture->pcm_mask;
+    if (next == tail) {
+      atomic_fetch_add_explicit(&capture->pcm_dropped, count - i,
+                                memory_order_relaxed);
+      break;
+    }
+    capture->pcm[head] = samples[i];
+    head = next;
+  }
+
+  atomic_store_explicit(&capture->pcm_head, head, memory_order_release);
+}
+
 void wf_capture_feed(wf_capture *capture, const int16_t *interleaved,
                      int32_t frames) {
   if (capture == NULL || interleaved == NULL || frames <= 0) return;
 
   const int32_t channels = capture->channels;
+  wf_pcm_push(capture, interleaved, frames * channels);
   for (int32_t frame = 0; frame < frames; frame++) {
     for (int32_t channel = 0; channel < channels; channel++) {
       // Extremes across channels, matching how the decoder mixes down: a
@@ -153,7 +188,8 @@ static void wf_device_callback(ma_device *device, void *output,
 
 wf_capture *wf_capture_create(int32_t sample_rate, int32_t channels,
                               int32_t hop, int32_t ring_capacity,
-                              int32_t take_capacity, int32_t *out_error) {
+                              int32_t take_capacity, int32_t pcm_capacity,
+                              int32_t *out_error) {
   int32_t ignored = 0;
   if (out_error == NULL) out_error = &ignored;
 
@@ -183,6 +219,17 @@ wf_capture *wf_capture_create(int32_t sample_rate, int32_t channels,
     return NULL;
   }
   capture->ring_mask = ring_size - 1;
+
+  if (pcm_capacity > 0) {
+    const int32_t pcm_size = wf_round_up_pow2(pcm_capacity);
+    capture->pcm = (int16_t *)calloc((size_t)pcm_size, sizeof(int16_t));
+    if (capture->pcm == NULL) {
+      wf_capture_destroy(capture);
+      *out_error = WF_ERR_MEMORY;
+      return NULL;
+    }
+    capture->pcm_mask = pcm_size - 1;
+  }
 
   wf_acc_reset(capture);
   *out_error = WF_OK;
@@ -257,6 +304,35 @@ int32_t wf_capture_drain(wf_capture *capture, wf_frame *out, int32_t max) {
   return count;
 }
 
+int32_t wf_capture_drain_pcm(wf_capture *capture, int16_t *out,
+                             int32_t max_samples) {
+  if (capture == NULL || capture->pcm == NULL || out == NULL ||
+      max_samples <= 0) {
+    return 0;
+  }
+
+  int32_t count = 0;
+  int32_t tail =
+      atomic_load_explicit(&capture->pcm_tail, memory_order_relaxed);
+
+  while (count < max_samples) {
+    if (tail == atomic_load_explicit(&capture->pcm_head, memory_order_acquire)) {
+      break;
+    }
+    out[count++] = capture->pcm[tail];
+    tail = (tail + 1) & capture->pcm_mask;
+  }
+
+  atomic_store_explicit(&capture->pcm_tail, tail, memory_order_release);
+  return count;
+}
+
+double wf_capture_pcm_dropped(const wf_capture *capture) {
+  if (capture == NULL) return 0.0;
+  return (double)atomic_load_explicit(&capture->pcm_dropped,
+                                      memory_order_relaxed);
+}
+
 double wf_capture_produced(const wf_capture *capture) {
   if (capture == NULL) return 0.0;
   return (double)atomic_load_explicit(&capture->produced, memory_order_relaxed);
@@ -319,6 +395,7 @@ void wf_capture_destroy(wf_capture *capture) {
   if (capture == NULL) return;
   wf_capture_stop(capture);
   free(capture->ring);
+  free(capture->pcm);
   free(capture->take);
   free(capture);
 }

@@ -5,6 +5,7 @@
 // hardest part of monowave be tested on every platform in CI rather than only
 // by hand on a phone.
 
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -265,6 +266,49 @@ void main() {
     expect(() => session.feedSynthetic(Int16List(512)), throwsStateError);
     // Idempotent: a double destroy would corrupt the heap.
     await session.dispose();
+  });
+
+  group('recording to a file', () {
+    test('writes a WAV that decodes back to what was captured', () async {
+      final directory = Directory.systemTemp.createTempSync('monowave-rec');
+      addTearDown(() => directory.deleteSync(recursive: true));
+      final path = '${directory.path}/take.wav';
+
+      final session = await FfiCaptureSession.open(
+        CaptureConfig(hop: _hop, recordTo: path),
+      );
+      addTearDown(session.dispose);
+
+      session
+        ..feedSynthetic(_tone(_hop * 40, amplitude: 20000))
+        ..drain();
+      final peaks = await session.stop();
+      addTearDown(peaks.dispose);
+
+      // The audio itself, not just the reduction: this is what a trim and an
+      // export need, and the audio thread never touched the filesystem to
+      // produce it.
+      final decoded = await MonowavePlatform.instance.decodeBytes(
+        File(path).readAsBytesSync(),
+      );
+      addTearDown(decoded.dispose);
+
+      expect(decoded.sampleRate, 44100);
+      expect(decoded.lengthInSamples, _hop * 40);
+      expect(decoded.view(decoded.levels - 1)[1], closeTo(20000, 500));
+      expect(session.pcmDropped, 0);
+    });
+
+    test('keeps only the reduction when no path is given', () async {
+      final session = await _session();
+
+      session.feedSynthetic(_tone(_hop * 10));
+
+      expect(session.pcmDropped, 0);
+      final peaks = await session.stop();
+      addTearDown(peaks.dispose);
+      expect(peaks.pairCount(0), 10);
+    });
   });
 
   test('starting without a device reports it rather than hanging', () async {

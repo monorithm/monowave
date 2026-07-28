@@ -84,6 +84,12 @@ jobs:
         run: flutter build apk --debug
       # A green build is not proof the code asset was bundled. Assert the
       # library is actually inside the APK, for every ABI.
+      #
+      # NOTE: bundled is still not the same as *loadable*. A missing `-lm` made
+      # this library fail to dlopen on Android for five milestones while this
+      # check stayed green, because the .so was present and correct-looking. The
+      # only test that catches that class of bug is running it on a device; see
+      # the integration job.
       - name: Verify the code asset is bundled
         working-directory: example
         run: |

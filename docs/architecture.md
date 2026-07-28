@@ -258,6 +258,22 @@ Rather than try to police that, the web binding **copies** the pyramid out of th
 Web pays a few hundred kilobytes for a normal recording, and native keeps the property an audiobook needs.
 Inside a single call, views are still re-acquired after every allocation rather than cached.
 
+### Two rings, not one
+
+Capture keeps the reduction and the audio in separate lock-free rings.
+
+They have completely different rates - 86 frames a second against 44,100 samples
+- and completely different consequences when they overflow.
+A dropped visualizer frame is cosmetic; a dropped audio sample is a hole in the
+recording.
+Sharing one ring would let a slow file write starve the visualizer, or a
+paused visualizer stall the writer.
+
+Neither ring ever blocks the producer.
+The audio thread copies into both and moves on; `CaptureSession` drains them on
+its timer and writes the WAV, because file I/O on an audio callback is precisely
+the unbounded operation the whole design exists to avoid.
+
 ### The determinism check
 
 This is the assertion the whole design answers to, and it runs two ways.

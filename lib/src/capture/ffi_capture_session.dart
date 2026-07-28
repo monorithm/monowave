@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ffi';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
@@ -15,13 +16,18 @@ import 'capture_session.dart';
 /// accumulate a hop, reduce it, publish it to a lock-free ring. This side wakes
 /// on a timer and moves whatever accumulated into Dart.
 class FfiCaptureSession implements CaptureSession {
-  FfiCaptureSession._(this._capture, this.config)
+  FfiCaptureSession._(this._capture, this.config, this._sink)
     : scope = CaptureScope(capacity: config.scopeCapacity),
-      _drainBuffer = calloc<bindings.WfFrame>(_drainBatch);
+      _drainBuffer = calloc<bindings.WfFrame>(_drainBatch),
+      _pcmBuffer = config.recordTo == null ? nullptr : calloc<Int16>(_pcmBatch);
 
   /// Frames moved per wake-up. At the default hop, 16 ms produces one or two
   /// frames, so this is generous headroom for a stalled consumer catching up.
   static const _drainBatch = 256;
+
+  /// Samples moved per wake-up. 16 ms at 44.1 kHz is 706, so this is about a
+  /// quarter second of slack.
+  static const _pcmBatch = 16384;
 
   static Future<FfiCaptureSession> open(CaptureConfig config) async {
     final error = calloc<Int32>();
@@ -32,6 +38,9 @@ class FfiCaptureSession implements CaptureSession {
         config.hop,
         config.ringCapacity,
         config.takeCapacity,
+        // A second of audio of slack in the PCM ring: the writer only has to
+        // keep up on average, not on every wake-up.
+        config.recordTo == null ? 0 : config.sampleRate * config.channels,
         error,
       );
       if (capture == nullptr) {
@@ -39,7 +48,18 @@ class FfiCaptureSession implements CaptureSession {
           'Could not allocate a capture session (code ${error.value})',
         );
       }
-      return FfiCaptureSession._(capture, config);
+
+      RandomAccessFile? sink;
+      final path = config.recordTo;
+      if (path != null) {
+        sink = await File(path).open(mode: FileMode.write);
+        // A placeholder header, rewritten with real sizes at stop. Writing it
+        // up front keeps the audio at a fixed offset, so the file is streamable
+        // rather than assembled in memory.
+        await sink.writeFrom(_wavHeader(config, 0));
+      }
+
+      return FfiCaptureSession._(capture, config, sink);
     } finally {
       calloc.free(error);
     }
@@ -47,6 +67,9 @@ class FfiCaptureSession implements CaptureSession {
 
   final Pointer<bindings.WfCapture> _capture;
   final Pointer<bindings.WfFrame> _drainBuffer;
+  final Pointer<Int16> _pcmBuffer;
+  final RandomAccessFile? _sink;
+  int _samplesWritten = 0;
 
   @override
   final CaptureConfig config;
@@ -72,6 +95,9 @@ class FfiCaptureSession implements CaptureSession {
 
   @override
   int get dropped => bindings.wfCaptureDropped(_capture).toInt();
+
+  @override
+  int get pcmDropped => bindings.wfCapturePcmDropped(_capture).toInt();
 
   @override
   bool get truncated => bindings.wfCaptureOverflowed(_capture) != 0;
@@ -107,7 +133,25 @@ class FfiCaptureSession implements CaptureSession {
       scope.add(frame);
       if (_frames.hasListener) _frames.add(frame);
     }
+
+    _drainPcm();
     return moved;
+  }
+
+  /// Moves whatever audio accumulated into the file, if one was requested.
+  void _drainPcm() {
+    final sink = _sink;
+    if (sink == null || _pcmBuffer == nullptr) return;
+
+    while (true) {
+      final moved = bindings.wfCaptureDrainPcm(_capture, _pcmBuffer, _pcmBatch);
+      if (moved <= 0) break;
+
+      // A view, not a copy: the bytes go straight from the ring to the file.
+      sink.writeFromSync(Uint8List.sublistView(_pcmBuffer.asTypedList(moved)));
+      _samplesWritten += moved;
+      if (moved < _pcmBatch) break;
+    }
   }
 
   @override
@@ -122,6 +166,15 @@ class FfiCaptureSession implements CaptureSession {
     // One last pass, so the visualizer ends on what was actually captured
     // rather than a frame or two short.
     drain();
+
+    final sink = _sink;
+    if (sink != null) {
+      // Now that the length is known, go back and write the real header.
+      await sink.setPosition(0);
+      await sink.writeFrom(_wavHeader(config, _samplesWritten));
+      await sink.flush();
+      await sink.close();
+    }
 
     final error = calloc<Int32>();
     try {
@@ -168,6 +221,7 @@ class FfiCaptureSession implements CaptureSession {
     await _frames.close();
     bindings.wfCaptureDestroy(_capture);
     calloc.free(_drainBuffer);
+    if (_pcmBuffer != nullptr) calloc.free(_pcmBuffer);
   }
 
   void _assertUsable() {
@@ -175,6 +229,40 @@ class FfiCaptureSession implements CaptureSession {
       throw StateError('This capture session was disposed.');
     }
   }
+}
+
+/// A canonical 44-byte PCM WAV header.
+///
+/// Written twice: once with zero length so the audio starts at a fixed offset,
+/// and once at stop with the real sizes.
+Uint8List _wavHeader(CaptureConfig config, int samples) {
+  final dataBytes = samples * 2;
+  final out = Uint8List(44);
+  final data = ByteData.sublistView(out);
+
+  void ascii(int offset, String tag) {
+    for (var i = 0; i < tag.length; i++) {
+      out[offset + i] = tag.codeUnitAt(i);
+    }
+  }
+
+  final byteRate = config.sampleRate * config.channels * 2;
+  ascii(0, 'RIFF');
+  data.setUint32(4, 36 + dataBytes, Endian.little);
+  ascii(8, 'WAVE');
+  ascii(12, 'fmt ');
+  data
+    ..setUint32(16, 16, Endian.little)
+    ..setUint16(20, 1, Endian.little)
+    ..setUint16(22, config.channels, Endian.little)
+    ..setUint32(24, config.sampleRate, Endian.little)
+    ..setUint32(28, byteRate, Endian.little)
+    ..setUint16(32, config.channels * 2, Endian.little)
+    ..setUint16(34, 16, Endian.little);
+  ascii(36, 'data');
+  data.setUint32(40, dataBytes, Endian.little);
+
+  return out;
 }
 
 /// Wraps a native pyramid as views, the same way a decode does.

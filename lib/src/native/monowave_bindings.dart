@@ -96,7 +96,15 @@ final class WfFrame extends Struct {
 }
 
 @Native<
-  Pointer<WfCapture> Function(Int32, Int32, Int32, Int32, Int32, Pointer<Int32>)
+  Pointer<WfCapture> Function(
+    Int32,
+    Int32,
+    Int32,
+    Int32,
+    Int32,
+    Int32,
+    Pointer<Int32>,
+  )
 >(symbol: 'wf_capture_create')
 external Pointer<WfCapture> wfCaptureCreate(
   int sampleRate,
@@ -104,8 +112,21 @@ external Pointer<WfCapture> wfCaptureCreate(
   int hop,
   int ringCapacity,
   int takeCapacity,
+  int pcmCapacity,
   Pointer<Int32> outError,
 );
+
+@Native<Int32 Function(Pointer<WfCapture>, Pointer<Int16>, Int32)>(
+  symbol: 'wf_capture_drain_pcm',
+)
+external int wfCaptureDrainPcm(
+  Pointer<WfCapture> capture,
+  Pointer<Int16> out,
+  int maxSamples,
+);
+
+@Native<Double Function(Pointer<WfCapture>)>(symbol: 'wf_capture_pcm_dropped')
+external double wfCapturePcmDropped(Pointer<WfCapture> capture);
 
 @Native<Int32 Function(Pointer<WfCapture>)>(symbol: 'wf_capture_start')
 external int wfCaptureStart(Pointer<WfCapture> capture);

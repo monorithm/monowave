@@ -1,104 +1,59 @@
-// The gallery is the reference renderer, so these assert the composition
-// monowave is meant to enable: monokit draws, monowave supplies the data.
+// The example is the reference renderer, so these assert the composition
+// monowave is meant to enable: the host holds the state and draws, monowave
+// supplies the data.
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:monokit/monokit.dart';
 import 'package:monowave/monowave.dart';
 import 'package:monowave_example/fixtures.dart';
 import 'package:monowave_example/main.dart';
-import 'package:monowave_example/painters/peak_waveform.dart';
+import 'package:monowave_example/painters/live_scope.dart';
 
 void main() {
-  testWidgets('the Play tab renders both rendering paths', (tester) async {
-    await tester.pumpWidget(const MonowaveGallery());
-    await tester.pumpAndSettle();
-
-    // monokit's own widget, fed by monowave's compact bars.
-    expect(find.byType(MonoVoiceNote), findsOneWidget);
-    // The reference painter, fed by peaks and a viewport.
-    expect(find.byType(PeakWaveform), findsOneWidget);
-  });
-
-  testWidgets('the waveform is announced as a slider', (tester) async {
-    await tester.pumpWidget(const MonowaveGallery());
-    await tester.pumpAndSettle();
-
-    final semantics = tester.getSemantics(find.byType(PeakWaveform).first);
-
-    expect(semantics.label, contains('Playback position'));
-    expect(semantics.value, contains('0:00 of'));
-  });
-
-  testWidgets('tapping the waveform seeks', (tester) async {
-    await tester.pumpWidget(const MonowaveGallery());
-    await tester.pumpAndSettle();
-
-    final waveform = find.byType(PeakWaveform).first;
-    final box = tester.getRect(waveform);
-
-    await tester.tapAt(Offset(box.left + box.width / 2, box.center.dy));
-    await tester.pumpAndSettle();
-
-    final semantics = tester.getSemantics(waveform);
-    // Roughly halfway through a six-second fixture.
-    expect(semantics.value, contains('0:03 of'));
-  });
-
-  testWidgets('the Record tab is live and idle until told otherwise', (
+  testWidgets('starts idle, with the waveform already the hero', (
     tester,
   ) async {
-    await tester.pumpWidget(const MonowaveGallery());
+    await tester.pumpWidget(const MonowaveExample());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Record'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Live capture'), findsOneWidget);
-    expect(find.text('Not recording.'), findsOneWidget);
+    expect(find.text('Voice memo'), findsOneWidget);
+    expect(find.text('Record'), findsOneWidget);
+    // The scope holds its place even before anything is captured, so the
+    // layout does not jump when recording starts.
+    expect(find.byType(LiveScope), findsOneWidget);
+    expect(find.text('00:00.0'), findsOneWidget);
   });
 
-  testWidgets('the Edit tab starts with nothing selected', (tester) async {
-    await tester.pumpWidget(const MonowaveGallery());
+  testWidgets('loading the sample moves to review with transport controls', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const MonowaveExample());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Edit'));
+    await tester.tap(find.text('Load a sample instead'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Zoom, pan and select'), findsOneWidget);
-    expect(find.text('Nothing selected.'), findsOneWidget);
+    expect(find.text('Play'), findsOneWidget);
+    expect(find.text('Export WAV'), findsOneWidget);
+    // Six seconds of fixture.
+    expect(find.text('00:06.0'), findsOneWidget);
+    // Trim actions exist but are inert until something is selected.
+    expect(find.text('Keep selection'), findsOneWidget);
   });
 
-  testWidgets('dragging in Select mode selects a range', (tester) async {
-    await tester.pumpWidget(const MonowaveGallery());
+  testWidgets('playing advances the clock', (tester) async {
+    await tester.pumpWidget(const MonowaveExample());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Load a sample instead'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Edit'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Select'));
-    await tester.pumpAndSettle();
+    await tester.tap(find.text('Play'));
+    await tester.pump(const Duration(milliseconds: 500));
 
-    // Driven pointer-by-pointer rather than with dragFrom: a scale recognizer
-    // has to win the arena against the surrounding scrollable first, and a
-    // single synthetic drag does not give it the chance.
-    final waveform = tester.getRect(find.byType(PeakWaveform).first);
-    final gesture = await tester.startGesture(
-      Offset(waveform.left + waveform.width * 0.25, waveform.center.dy),
-    );
-    await tester.pump(const Duration(milliseconds: 20));
-    for (var step = 0; step < 4; step++) {
-      await gesture.moveBy(Offset(waveform.width * 0.1, 0));
-      await tester.pump(const Duration(milliseconds: 20));
-    }
-    await gesture.up();
-    await tester.pumpAndSettle();
-
-    expect(find.text('Nothing selected.'), findsNothing);
-    expect(find.textContaining('selected from'), findsOneWidget);
+    expect(find.text('Pause'), findsOneWidget);
   });
 
-  test('the fixture summary is small enough to store on a message', () {
+  test('the bundled sample is six seconds and summarizes to 64 bytes', () {
     expect(Fixtures.bars.length, CompactBars.defaultBars);
-    expect(Fixtures.barsBase64.length, lessThan(100));
     expect(Fixtures.timeline.duration.inSeconds, 6);
   });
 }

@@ -4,6 +4,59 @@ All notable changes to monowave are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 follows [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed: the native core never loaded on Android
+
+`libmonowave.so` was bundled correctly in every APK since M0 and failed to
+`dlopen` on every one of them: `cannot locate symbol "pow"`. miniaudio and
+dr_mp3 both reference it, Apple's libSystem provides the math functions
+implicitly, and Android and Linux do not — so `libraries: ['m']` was missing
+from the build hook.
+
+M0 claimed Android was verified. What it actually verified was that the library
+was *inside* the APK, which is not the same as it loading, and the CI check
+inherited exactly that blind spot. It went unnoticed for five milestones
+because every test ran on the macOS host and the example's sample path is pure
+Dart. Running it on a real device is what found it.
+
+### Fixed: quiet recordings drew as a flat line
+
+The peaks painter scaled linearly, so a quiet room tone at about 1% of full
+scale drew a two-pixel bar and read as broken. `WaveformStyle.normalize` scales
+so the loudest moment fills the height, read from the coarsest mipmap level in
+O(1) so it does not shift while panning. `CompactBars` already made the same
+correction for the fixed-bar case.
+
+### Capture keeps the audio, not just the reduction
+
+Building a real voice-memo example surfaced a gap the milestones had missed:
+`stop()` returned peaks, but the audio thread had only ever kept a *reduction*.
+The PCM was gone, so a recording could be drawn and never trimmed or exported -
+which is most of what a voice memo app does.
+
+#### Added
+
+- **A second lock-free ring for raw PCM**, alongside the one carrying reduced
+  frames. The audio thread only ever copies into both; writing the file is the
+  consumer's job, because file I/O on an audio callback is exactly the unbounded
+  operation that produces a glitch.
+- **`CaptureConfig.recordTo`**, which streams the take to a 16-bit PCM WAV as it
+  is captured. The header is written twice - once as a placeholder so the audio
+  starts at a fixed offset, once at stop with the real sizes - so the file is
+  streamed rather than assembled in memory.
+- **`CaptureSession.pcmDropped`**, reported separately from `dropped`. Losing a
+  visualizer frame is cosmetic; losing audio is not.
+
+The output is the same format the exporter reads, so a recording can be trimmed
+and exported without a second format in play.
+
+### The example is a voice memo app
+
+Replaced the developer gallery with a real product flow - idle, recording,
+review - with the waveform as the hero element throughout and the Android
+runtime microphone permission finally requested, closing the M3 gap.
+
 ## 0.2.0
 
 Decode, capture, render and edit, on one C core across six targets. Web has

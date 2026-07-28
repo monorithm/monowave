@@ -13,6 +13,7 @@ class CaptureConfig {
     this.scopeCapacity = 256,
     this.maxDuration = const Duration(minutes: 30),
     this.drainInterval = const Duration(milliseconds: 16),
+    this.recordTo,
   });
 
   final int sampleRate;
@@ -43,6 +44,16 @@ class CaptureConfig {
   /// How often the consumer moves frames out of the ring.
   final Duration drainInterval;
 
+  /// Where to write the captured audio, or null to keep only the reduction.
+  ///
+  /// Capture keeps peaks and audio in two separate rings. The audio thread only
+  /// ever copies into them; this side writes the file, because file I/O on an
+  /// audio callback is exactly the unbounded operation that produces a glitch.
+  ///
+  /// The result is 16-bit PCM WAV, which is also what the exporter reads — so a
+  /// recording can be trimmed and exported without a second format in play.
+  final String? recordTo;
+
   /// Hops the take buffer must hold to cover [maxDuration].
   int get takeCapacity =>
       (maxDuration.inMicroseconds *
@@ -70,6 +81,12 @@ abstract interface class CaptureSession {
 
   /// Hops the audio thread produced.
   int get produced;
+
+  /// Samples the audio ring dropped because the file writer fell behind.
+  ///
+  /// Separate from [dropped]: losing a visualizer frame is cosmetic, losing
+  /// audio is not.
+  int get pcmDropped;
 
   /// Hops the consumer was too slow to collect.
   ///

@@ -193,6 +193,9 @@ class FakeCaptureSession implements CaptureSession {
   int get dropped => _dropped;
 
   @override
+  int get pcmDropped => 0;
+
+  @override
   bool get truncated => false;
 
   int startCount = 0;

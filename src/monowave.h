@@ -22,7 +22,7 @@ extern "C" {
 #endif
 
 // Bumped whenever a signature below changes. Dart asserts on it at startup.
-#define WF_ABI_VERSION 4
+#define WF_ABI_VERSION 5
 
 // Cap on pyramid depth. 24 levels at a 128-sample base covers a bit over a
 // billion samples per pair — far past any real recording.
@@ -102,6 +102,7 @@ typedef struct wf_capture wf_capture;
 WF_EXPORT wf_capture *wf_capture_create(int32_t sample_rate, int32_t channels,
                                         int32_t hop, int32_t ring_capacity,
                                         int32_t take_capacity,
+                                        int32_t pcm_capacity,
                                         int32_t *out_error);
 
 WF_EXPORT int32_t wf_capture_start(wf_capture *capture);
@@ -125,6 +126,21 @@ WF_EXPORT int32_t wf_capture_overflowed(const wf_capture *capture);
 /// A pyramid for everything captured since the last start.
 WF_EXPORT wf_peaks *wf_capture_take_peaks(wf_capture *capture,
                                           int32_t *out_error);
+
+/// Moves up to `max_samples` raw interleaved samples out of the PCM ring.
+///
+/// Capture keeps the reduction *and* the audio, in two separate rings. The
+/// audio thread only ever copies into them; writing a file is the consumer's
+/// job, because file I/O on an audio callback is exactly the kind of unbounded
+/// operation that produces a glitch.
+///
+/// Returns the number of samples moved. Pass `pcm_capacity` of 0 to
+/// wf_capture_create to skip keeping audio at all.
+WF_EXPORT int32_t wf_capture_drain_pcm(wf_capture *capture, int16_t *out,
+                                       int32_t max_samples);
+
+/// Samples the PCM ring dropped because the consumer was too slow.
+WF_EXPORT double wf_capture_pcm_dropped(const wf_capture *capture);
 
 /// The audio-thread entry point: accumulate, reduce on hop boundaries, publish.
 ///

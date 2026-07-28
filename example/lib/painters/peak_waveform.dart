@@ -18,6 +18,8 @@ class WaveformStyle {
     this.minBarWidth = 1.0,
     this.minBarHeight = 1.5,
     this.playheadWidth = 2.0,
+    this.normalize = true,
+    this.maxGain = 12.0,
   });
 
   final Color played;
@@ -36,6 +38,17 @@ class WaveformStyle {
   /// missing data.
   final double minBarHeight;
   final double playheadWidth;
+
+  /// Scale the drawing so the loudest moment fills the height.
+  ///
+  /// On by default, and it is the difference between a legible waveform and a
+  /// flat line. Normal speech peaks well below full scale — a quiet room tone
+  /// sits around 1% of it, which draws as a two-pixel bar and reads as broken.
+  /// `CompactBars` makes the same correction for the fixed-bar case.
+  final bool normalize;
+
+  /// Ceiling on that scaling, so digital silence does not amplify into noise.
+  final double maxGain;
 
   bool sameGeometry(WaveformStyle other) =>
       barFraction == other.barFraction &&
@@ -79,9 +92,30 @@ class PeakWaveform extends StatelessWidget {
   final WaveformStyle style;
   final double height;
 
+  /// How much to scale so the loudest moment fills the height.
+  ///
+  /// Read from the coarsest level, whose single pair holds the extremes of the
+  /// whole file — so it is O(1), and it does not change while panning the way a
+  /// per-window maximum would.
+  double get _gain {
+    if (!style.normalize) return 1;
+
+    final coarsest = peaks.view(peaks.levels - 1);
+    if (coarsest.length < 2) return 1;
+
+    final loudest = coarsest[0].abs() > coarsest[1].abs()
+        ? coarsest[0].abs()
+        : coarsest[1].abs();
+    if (loudest <= 0) return 1;
+
+    final gain = 32768 / loudest;
+    return gain > style.maxGain ? style.maxGain : gain;
+  }
+
   @override
   Widget build(BuildContext context) {
     final window = viewport.resolve(peaks);
+    final gain = _gain;
 
     return SizedBox(
       height: height,
@@ -91,13 +125,14 @@ class PeakWaveform extends StatelessWidget {
         children: <Widget>[
           RepaintBoundary(
             child: CustomPaint(
-              painter: _BodyPainter(window: window, style: style),
+              painter: _BodyPainter(window: window, style: style, gain: gain),
             ),
           ),
           CustomPaint(
             painter: _PlayheadPainter(
               window: window,
               style: style,
+              gain: gain,
               playheadX: viewport.xForSample(progressSample),
             ),
           ),
@@ -120,14 +155,26 @@ class PeakWaveform extends StatelessWidget {
 /// Draws every visible bar in the unplayed color. Repaints only when the data
 /// or the viewport changes — never when the playhead moves.
 class _BodyPainter extends CustomPainter {
-  const _BodyPainter({required this.window, required this.style});
+  const _BodyPainter({
+    required this.window,
+    required this.style,
+    required this.gain,
+  });
 
   final PeakWindow window;
   final WaveformStyle style;
+  final double gain;
 
   @override
   void paint(Canvas canvas, Size size) {
-    _paintBars(canvas, size, window, style, Paint()..color = style.unplayed);
+    _paintBars(
+      canvas,
+      size,
+      window,
+      style,
+      gain,
+      Paint()..color = style.unplayed,
+    );
   }
 
   @override
@@ -137,6 +184,7 @@ class _BodyPainter extends CustomPainter {
       old.window.pairCount != window.pairCount ||
       old.window.xOfFirstPair != window.xOfFirstPair ||
       old.window.pixelsPerPair != window.pixelsPerPair ||
+      old.gain != gain ||
       old.style.unplayed != style.unplayed ||
       !old.style.sameGeometry(style);
 }
@@ -150,11 +198,13 @@ class _PlayheadPainter extends CustomPainter {
   const _PlayheadPainter({
     required this.window,
     required this.style,
+    required this.gain,
     required this.playheadX,
   });
 
   final PeakWindow window;
   final WaveformStyle style;
+  final double gain;
   final double playheadX;
 
   @override
@@ -165,7 +215,14 @@ class _PlayheadPainter extends CustomPainter {
         ..clipRect(
           Rect.fromLTWH(0, 0, playheadX.clamp(0, size.width), size.height),
         );
-      _paintBars(canvas, size, window, style, Paint()..color = style.played);
+      _paintBars(
+        canvas,
+        size,
+        window,
+        style,
+        gain,
+        Paint()..color = style.played,
+      );
       canvas.restore();
     }
 
@@ -197,6 +254,7 @@ void _paintBars(
   Size size,
   PeakWindow window,
   WaveformStyle style,
+  double gain,
   Paint paint,
 ) {
   if (window.isEmpty || size.height <= 0) return;
@@ -217,8 +275,10 @@ void _paintBars(
 
     // Canvas y grows downward, and min is negative, so the subtraction puts the
     // minimum below the centre line and the maximum above it.
-    final top = center - (window.maxAt(i) / fullScale) * center;
-    final bottom = center - (window.minAt(i) / fullScale) * center;
+    final top =
+        center - (window.maxAt(i) * gain / fullScale).clamp(-1.0, 1.0) * center;
+    final bottom =
+        center - (window.minAt(i) * gain / fullScale).clamp(-1.0, 1.0) * center;
 
     var barHeight = bottom - top;
     var barTop = top;

@@ -42,6 +42,17 @@ void main(List<String> args) async {
       _ => false,
     };
 
+    // Android and Linux need libm named explicitly. Apple's libSystem provides
+    // the math functions implicitly, which is why this was invisible until the
+    // library was dlopen'd on a real Android device: miniaudio and dr_mp3 both
+    // reference `pow`, and without this the whole library fails to load with
+    // "cannot locate symbol" — not a missing-function error, a missing-library
+    // one.
+    final needsLibm = switch (input.config.code.targetOS) {
+      OS.android || OS.linux => true,
+      _ => false,
+    };
+
     final builder = CBuilder.library(
       name: 'monowave',
       assetName: 'src/native/monowave_bindings.dart',
@@ -53,6 +64,7 @@ void main(List<String> args) async {
       ],
       language: isApple ? Language.objectiveC : Language.c,
       frameworks: isApple ? _appleFrameworks : const [],
+      libraries: needsLibm ? const ['m'] : const [],
     );
 
     await builder.run(input: input, output: output);
