@@ -78,6 +78,51 @@ class _RecordPageState extends State<RecordPage> {
     }
   }
 
+  Future<void> _togglePause() async {
+    final session = _session;
+    if (session == null) return;
+
+    try {
+      if (session.isPaused) {
+        await session.resume();
+        _ticker?.start();
+      } else {
+        await session.pause();
+        _ticker?.stop();
+      }
+      setState(() {});
+    } on CaptureUnavailable catch (failure) {
+      setState(() => _error = failure.message);
+    }
+  }
+
+  /// Abandons the take and the file with it.
+  Future<void> _discard() async {
+    final session = _session;
+    _ticker
+      ?..stop()
+      ..dispose();
+    _ticker = null;
+
+    if (session != null) {
+      try {
+        final peaks = await session.stop();
+        peaks.dispose();
+      } on CaptureUnavailable {
+        // Nothing was captured; there is nothing to clean up but the file.
+      }
+      await session.dispose();
+    }
+
+    final path = _path;
+    if (path != null) {
+      final file = File(path);
+      if (file.existsSync()) file.deleteSync();
+    }
+
+    if (mounted) Navigator.of(context).pop();
+  }
+
   Future<void> _stop() async {
     final session = _session;
     if (session == null) return;
@@ -106,6 +151,7 @@ class _RecordPageState extends State<RecordPage> {
     final colors = theme.colors;
     final session = _session;
     final recording = session != null;
+    final paused = session?.isPaused ?? false;
 
     final elapsed = Duration(
       milliseconds: (session?.produced ?? 0) * 512 * 1000 ~/ 44100,
@@ -120,7 +166,7 @@ class _RecordPageState extends State<RecordPage> {
           onPressed: recording ? null : () => Navigator.of(context).pop(),
         ),
         title: const Text('Record'),
-        trailing: recording ? const MonoLiveBadge() : null,
+        trailing: recording && !paused ? const MonoLiveBadge() : null,
       ),
       body: Padding(
         padding: EdgeInsets.symmetric(horizontal: theme.spacing.xl),
@@ -130,7 +176,11 @@ class _RecordPageState extends State<RecordPage> {
             WaveClock(
               duration: elapsed,
               size: 52,
-              color: recording ? colors.live : colors.foregroundSubtle,
+              color: recording && !paused
+                  ? colors.live
+                  : (recording
+                        ? colors.foregroundMuted
+                        : colors.foregroundSubtle),
             ),
             SizedBox(height: theme.spacing.xxl),
             LiveScope(
@@ -166,15 +216,58 @@ class _RecordPageState extends State<RecordPage> {
                 description: Text(_error!),
               )
             else
-              WaveChromeButton(
-                diameter: 84,
-                tone: recording ? WaveTone.live : WaveTone.accent,
-                semanticLabel: recording ? 'Stop' : 'Start recording',
-                onPressed: _busy ? null : (recording ? _stop : _start),
-                child: MonoIcon(
-                  recording ? MonoIcons.pause : MonoIcons.mic,
-                  size: 30,
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: <Widget>[
+                  // Discard sits left of the primary control and is only ever
+                  // available mid-take, so it cannot be hit by accident before
+                  // there is anything to lose.
+                  _ControlSlot(
+                    label: 'Discard',
+                    child: WaveChromeButton(
+                      diameter: 52,
+                      semanticLabel: 'Discard this recording',
+                      onPressed: recording && !_busy ? _discard : null,
+                      child: const MonoIcon(MonoIcons.close, size: 20),
+                    ),
+                  ),
+                  _ControlSlot(
+                    label: recording
+                        ? (session.isPaused ? 'Resume' : 'Pause')
+                        : 'Record',
+                    child: WaveChromeButton(
+                      diameter: 84,
+                      tone: recording && !session.isPaused
+                          ? WaveTone.live
+                          : WaveTone.accent,
+                      semanticLabel: recording
+                          ? (session.isPaused ? 'Resume' : 'Pause')
+                          : 'Start recording',
+                      onPressed: _busy
+                          ? null
+                          : (recording ? _togglePause : _start),
+                      child: MonoIcon(
+                        !recording
+                            ? MonoIcons.mic
+                            : (session.isPaused
+                                  ? MonoIcons.play
+                                  : MonoIcons.pause),
+                        size: 30,
+                      ),
+                    ),
+                  ),
+                  _ControlSlot(
+                    label: 'Done',
+                    child: WaveChromeButton(
+                      diameter: 52,
+                      tone: WaveTone.accent,
+                      semanticLabel: 'Finish recording',
+                      onPressed: recording && !_busy ? _stop : null,
+                      child: const MonoIcon(MonoIcons.check, size: 20),
+                    ),
+                  ),
+                ],
               ),
             SizedBox(height: theme.spacing.xxxl),
           ],
@@ -192,5 +285,34 @@ class _RecordPageState extends State<RecordPage> {
     return lost == 0
         ? 'Nothing dropped — the ring is keeping up.'
         : '${session.dropped} frames and ${session.pcmDropped} samples dropped.';
+  }
+}
+
+/// A control with its name underneath.
+///
+/// Three round buttons with no labels is a guessing game; the label is what
+/// makes discard and done distinguishable at a glance.
+class _ControlSlot extends StatelessWidget {
+  const _ControlSlot({required this.label, required this.child});
+
+  final String label;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = MonokitTheme.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        child,
+        SizedBox(height: theme.spacing.sm),
+        Text(
+          label,
+          style: theme.typography.labelMedium.copyWith(
+            color: theme.colors.foregroundMuted,
+          ),
+        ),
+      ],
+    );
   }
 }

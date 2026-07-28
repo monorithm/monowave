@@ -100,7 +100,17 @@ abstract interface class CaptureSession {
 
   bool get isRecording;
 
+  /// Whether the device is stopped but the take is intact.
+  bool get isPaused;
+
   Future<void> start();
+
+  /// Stops the device without discarding the take.
+  ///
+  /// The rings, the hop accumulator and the history all survive, so [resume]
+  /// continues the same recording rather than starting a new one.
+  Future<void> pause();
+  Future<void> resume();
 
   /// Stops the device and returns peaks for everything captured.
   ///

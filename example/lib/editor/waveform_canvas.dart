@@ -92,23 +92,38 @@ class PeakWaveform extends StatelessWidget {
   final WaveformStyle style;
   final double height;
 
-  /// How much to scale so the loudest moment fills the height.
+  /// How much to scale so the body of the audio fills the height.
   ///
-  /// Read from the coarsest level, whose single pair holds the extremes of the
-  /// whole file — so it is O(1), and it does not change while panning the way a
-  /// per-window maximum would.
+  /// A high percentile rather than the maximum. Normalizing to the peak is
+  /// defeated by a single transient — the click as a microphone opens sets the
+  /// maximum, and everything after it is scaled down against a sample nobody
+  /// cares about, which is how a normal recording ends up drawn as a thread.
+  ///
+  /// Taken from a coarse level so the cost is bounded by the level's size
+  /// rather than the file's, and computed once per build rather than per bar.
   double get _gain {
     if (!style.normalize) return 1;
 
-    final coarsest = peaks.view(peaks.levels - 1);
-    if (coarsest.length < 2) return 1;
+    // The coarsest level with enough pairs for a percentile to mean something.
+    var level = peaks.levels - 1;
+    while (level > 0 && peaks.pairCount(level) < 32) {
+      level--;
+    }
 
-    final loudest = coarsest[0].abs() > coarsest[1].abs()
-        ? coarsest[0].abs()
-        : coarsest[1].abs();
-    if (loudest <= 0) return 1;
+    final view = peaks.view(level);
+    final pairs = peaks.pairCount(level);
+    if (pairs == 0) return 1;
 
-    final gain = 32768 / loudest;
+    final magnitudes = List<int>.generate(pairs, (i) {
+      final low = view[i * 2].abs();
+      final high = view[i * 2 + 1].abs();
+      return low > high ? low : high;
+    })..sort();
+
+    final reference = magnitudes[(pairs * 0.9).floor().clamp(0, pairs - 1)];
+    if (reference <= 0) return 1;
+
+    final gain = 32768 / reference;
     return gain > style.maxGain ? style.maxGain : gain;
   }
 

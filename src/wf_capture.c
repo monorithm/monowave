@@ -269,6 +269,32 @@ int32_t wf_capture_start(wf_capture *capture) {
 #endif
 }
 
+int32_t wf_capture_pause(wf_capture *capture) {
+  if (capture == NULL) return WF_ERR_ARGUMENT;
+#ifdef WF_NO_DEVICE
+  return WF_ERR_DEVICE;
+#else
+  if (!capture->started) return WF_ERR_STATE;
+  // Only the device stops. Everything that holds the take stays exactly as it
+  // is, so resuming appends rather than restarting.
+  if (ma_device_stop(&capture->device) != MA_SUCCESS) return WF_ERR_DEVICE;
+  capture->started = 0;
+  return WF_OK;
+#endif
+}
+
+int32_t wf_capture_resume(wf_capture *capture) {
+  if (capture == NULL) return WF_ERR_ARGUMENT;
+#ifdef WF_NO_DEVICE
+  return WF_ERR_DEVICE;
+#else
+  if (capture->started || !capture->has_device) return WF_ERR_STATE;
+  if (ma_device_start(&capture->device) != MA_SUCCESS) return WF_ERR_DEVICE;
+  capture->started = 1;
+  return WF_OK;
+#endif
+}
+
 int32_t wf_capture_stop(wf_capture *capture) {
   if (capture == NULL) return WF_ERR_ARGUMENT;
 

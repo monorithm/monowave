@@ -134,6 +134,12 @@ external int wfCaptureStart(Pointer<WfCapture> capture);
 @Native<Int32 Function(Pointer<WfCapture>)>(symbol: 'wf_capture_stop')
 external int wfCaptureStop(Pointer<WfCapture> capture);
 
+@Native<Int32 Function(Pointer<WfCapture>)>(symbol: 'wf_capture_pause')
+external int wfCapturePause(Pointer<WfCapture> capture);
+
+@Native<Int32 Function(Pointer<WfCapture>)>(symbol: 'wf_capture_resume')
+external int wfCaptureResume(Pointer<WfCapture> capture);
+
 @Native<Void Function(Pointer<WfCapture>)>(symbol: 'wf_capture_destroy')
 external void wfCaptureDestroy(Pointer<WfCapture> capture);
 

@@ -70,11 +70,15 @@ class LiveScope extends StatelessWidget {
 
 class _ScopePainter extends CustomPainter {
   _ScopePainter({required this.scope, required this.style})
-    : _length = scope?.length ?? 0;
+    : _revision = scope?.revision ?? -1;
 
   final CaptureScope? scope;
   final LiveScopeStyle style;
-  final int _length;
+
+  /// The scope is a ring that mutates in place. Keying repaints on its length
+  /// works right up until the ring fills, at which point the length stops
+  /// changing and the meter silently freezes — which is exactly what happened.
+  final int _revision;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -120,9 +124,7 @@ class _ScopePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_ScopePainter old) =>
-      // The scope mutates in place, so identity is not enough — the frame count
-      // is what actually changes between ticks.
-      old._length != _length ||
+      old._revision != _revision ||
       !identical(old.scope, scope) ||
       old.style.active != style.active;
 }

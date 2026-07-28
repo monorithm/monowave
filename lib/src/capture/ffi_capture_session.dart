@@ -82,6 +82,7 @@ class FfiCaptureSession implements CaptureSession {
 
   Timer? _timer;
   bool _recording = false;
+  bool _paused = false;
   bool _disposed = false;
 
   @override
@@ -89,6 +90,9 @@ class FfiCaptureSession implements CaptureSession {
 
   @override
   bool get isRecording => _recording;
+
+  @override
+  bool get isPaused => _paused;
 
   @override
   int get produced => bindings.wfCaptureProduced(_capture).toInt();
@@ -116,7 +120,32 @@ class FfiCaptureSession implements CaptureSession {
     }
 
     _recording = true;
+    _paused = false;
     _timer = Timer.periodic(config.drainInterval, (_) => drain());
+  }
+
+  @override
+  Future<void> pause() async {
+    _assertUsable();
+    if (!_recording || _paused) return;
+
+    final code = bindings.wfCapturePause(_capture);
+    if (code != 0) throw CaptureUnavailable('Could not pause (code $code)');
+
+    // Keep draining: the rings still hold whatever arrived before the device
+    // stopped, and the file writer must not be left holding it.
+    drain();
+    _paused = true;
+  }
+
+  @override
+  Future<void> resume() async {
+    _assertUsable();
+    if (!_recording || !_paused) return;
+
+    final code = bindings.wfCaptureResume(_capture);
+    if (code != 0) throw CaptureUnavailable('Could not resume (code $code)');
+    _paused = false;
   }
 
   /// Moves whatever the audio thread has published into [scope] and [frames].
@@ -162,6 +191,7 @@ class FfiCaptureSession implements CaptureSession {
     _timer = null;
     bindings.wfCaptureStop(_capture);
     _recording = false;
+    _paused = false;
 
     // One last pass, so the visualizer ends on what was actually captured
     // rather than a frame or two short.

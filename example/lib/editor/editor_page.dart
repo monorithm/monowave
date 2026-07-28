@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:monokit/monokit.dart';
 import 'package:monowave/monowave.dart';
 
@@ -26,6 +28,24 @@ class _EditorPageState extends State<EditorPage> {
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  /// Throws the take away and goes back for another one.
+  ///
+  /// Two taps rather than a dialog: the action is destructive enough to need
+  /// confirming and cheap enough not to deserve a modal, and the button saying
+  /// what the next tap will do is clearer than a sheet asking the same thing.
+  bool _armed = false;
+
+  Future<void> _discard() async {
+    if (!_armed) {
+      setState(() => _armed = true);
+      return;
+    }
+
+    final file = File(widget.source);
+    if (file.existsSync()) file.deleteSync();
+    if (mounted) Navigator.of(context).pop();
   }
 
   Future<void> _export() async {
@@ -81,6 +101,19 @@ class _EditorPageState extends State<EditorPage> {
                 label: const Text('Export WAV'),
                 size: MonoButtonSize.lg,
                 onPressed: _export,
+              ),
+              SizedBox(height: theme.spacing.sm),
+              MonoButton(
+                variant: _armed
+                    ? MonoButtonVariant.destructive
+                    : MonoButtonVariant.ghost,
+                onPressed: _discard,
+                child: Text(
+                  _armed ? 'Tap again to discard' : 'Discard recording',
+                  style: _armed
+                      ? null
+                      : TextStyle(color: theme.colors.dangerText),
+                ),
               ),
               SizedBox(height: theme.spacing.sm),
               Text(
@@ -199,7 +232,11 @@ class _CanvasState extends State<_Canvas> {
   }
 }
 
-/// Play and scrub. The player is `just_audio`; monowave never sees it.
+/// Play, scrub, and see where you are. The player is `just_audio`; monowave
+/// never sees it.
+///
+/// A transport needs a track you can drag, not just a button and a number: the
+/// number tells you where you are, the track is what lets you go somewhere else.
 class _Transport extends StatelessWidget {
   const _Transport({required this.controller});
 
@@ -208,39 +245,55 @@ class _Transport extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = MonokitTheme.of(context);
+    final total = controller.duration;
+    final progress = total.inMilliseconds == 0
+        ? 0.0
+        : (controller.position.inMilliseconds / total.inMilliseconds).clamp(
+            0.0,
+            1.0,
+          );
 
-    return Row(
+    return Column(
       children: <Widget>[
-        WaveChromeButton(
-          diameter: 64,
-          tone: WaveTone.accent,
-          semanticLabel: controller.isPlaying ? 'Pause' : 'Play',
-          onPressed: controller.isPreparing ? null : controller.togglePlay,
-          child: controller.isPreparing
-              ? const MonoSpinner(size: 20)
-              : MonoIcon(
-                  controller.isPlaying ? MonoIcons.pause : MonoIcons.play,
-                  size: 26,
-                ),
+        Row(
+          children: <Widget>[
+            WaveChromeButton(
+              diameter: 56,
+              tone: WaveTone.accent,
+              semanticLabel: controller.isPlaying ? 'Pause' : 'Play',
+              onPressed: controller.isPreparing ? null : controller.togglePlay,
+              child: controller.isPreparing
+                  ? const MonoSpinner(size: 18)
+                  : MonoIcon(
+                      controller.isPlaying ? MonoIcons.pause : MonoIcons.play,
+                      size: 24,
+                    ),
+            ),
+            SizedBox(width: theme.spacing.lg),
+            Expanded(
+              child: _ScrubBar(controller: controller, progress: progress),
+            ),
+          ],
         ),
-        SizedBox(width: theme.spacing.lg),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        SizedBox(height: theme.spacing.sm),
+        Padding(
+          padding: EdgeInsets.only(left: 56 + theme.spacing.lg),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: <Widget>[
               Text(
                 WaveClock.format(controller.position),
                 style: theme.typography.mono.copyWith(
-                  fontSize: 18,
+                  fontSize: 13,
                   color: theme.colors.foreground,
                 ),
               ),
-              SizedBox(height: theme.spacing.xs),
               Text(
                 controller.isPreparing
-                    ? 'Rendering the edit to preview it...'
-                    : 'of ${WaveClock.format(controller.duration)}',
-                style: theme.typography.bodyMedium.copyWith(
+                    ? 'rendering the edit...'
+                    : WaveClock.format(total),
+                style: theme.typography.mono.copyWith(
+                  fontSize: 13,
                   color: theme.colors.foregroundMuted,
                 ),
               ),
@@ -248,6 +301,81 @@ class _Transport extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// A draggable track. Tall enough to hit, even though the bar is thin.
+class _ScrubBar extends StatelessWidget {
+  const _ScrubBar({required this.controller, required this.progress});
+
+  final EditorController controller;
+  final double progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = MonokitTheme.of(context);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        void scrubTo(double dx) {
+          final fraction = (dx / constraints.maxWidth).clamp(0.0, 1.0);
+          controller.seek(controller.duration * fraction);
+        }
+
+        return Semantics(
+          slider: true,
+          label: 'Playback position',
+          value: WaveClock.format(controller.position),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: (d) => scrubTo(d.localPosition.dx),
+            onHorizontalDragUpdate: (d) => scrubTo(d.localPosition.dx),
+            child: SizedBox(
+              height: 44,
+              child: Center(
+                child: Stack(
+                  alignment: Alignment.centerLeft,
+                  children: <Widget>[
+                    Container(
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: theme.colors.fill,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    FractionallySizedBox(
+                      widthFactor: progress,
+                      child: Container(
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: theme.colors.primary,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment(progress * 2 - 1, 0),
+                      child: Container(
+                        width: 14,
+                        height: 14,
+                        decoration: BoxDecoration(
+                          color: theme.colors.primary,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: theme.colors.page,
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

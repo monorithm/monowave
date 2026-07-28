@@ -22,7 +22,7 @@ extern "C" {
 #endif
 
 // Bumped whenever a signature below changes. Dart asserts on it at startup.
-#define WF_ABI_VERSION 5
+#define WF_ABI_VERSION 6
 
 // Cap on pyramid depth. 24 levels at a 128-sample base covers a bit over a
 // billion samples per pair — far past any real recording.
@@ -107,6 +107,13 @@ WF_EXPORT wf_capture *wf_capture_create(int32_t sample_rate, int32_t channels,
 
 WF_EXPORT int32_t wf_capture_start(wf_capture *capture);
 WF_EXPORT int32_t wf_capture_stop(wf_capture *capture);
+
+/// Stops the device without discarding anything.
+///
+/// The rings, the hop accumulator and the history all survive, so resuming
+/// continues the same take rather than starting a new one.
+WF_EXPORT int32_t wf_capture_pause(wf_capture *capture);
+WF_EXPORT int32_t wf_capture_resume(wf_capture *capture);
 WF_EXPORT void wf_capture_destroy(wf_capture *capture);
 
 /// Moves up to `max` reduced frames out of the ring. Consumer side; safe to

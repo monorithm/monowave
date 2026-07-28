@@ -24,6 +24,14 @@ class CaptureScope {
   final Int16List _data;
   int _length = 0;
   int _start = 0;
+  int _revision = 0;
+
+  /// Increments on every frame added.
+  ///
+  /// A painter must compare this rather than [length]: the scope is a ring that
+  /// mutates in place, so once it is full the length never changes again and a
+  /// `shouldRepaint` keyed on length silently stops repainting.
+  int get revision => _revision;
 
   /// Frames currently retained, at most [capacity].
   int get length => _length;
@@ -44,11 +52,13 @@ class CaptureScope {
     } else {
       _start = (_start + 1) % capacity;
     }
+    _revision++;
   }
 
   void clear() {
     _length = 0;
     _start = 0;
+    _revision++;
   }
 
   int _at(int index, int offset) {

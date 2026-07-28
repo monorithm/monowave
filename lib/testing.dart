@@ -195,6 +195,17 @@ class FakeCaptureSession implements CaptureSession {
   @override
   int get pcmDropped => 0;
 
+  bool _paused = false;
+
+  @override
+  bool get isPaused => _paused;
+
+  @override
+  Future<void> pause() async => _paused = true;
+
+  @override
+  Future<void> resume() async => _paused = false;
+
   @override
   bool get truncated => false;
 
