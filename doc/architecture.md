@@ -14,8 +14,13 @@ An audio package that ships widgets asks every consumer to accept its design lan
 It also asks them to accept its idea of what a waveform is, which is worse, because a voice note, a podcast scrubber and a trim editor want three different pictures out of the same data.
 
 The rule this leaves is checkable, and CI checks it.
-Nothing under `lib/` imports `package:flutter/widgets.dart`, `material.dart` or `cupertino.dart`.
+Nothing under `lib/` imports Flutter's widget, Material or Cupertino libraries.
 A grep returning nothing is the invariant.
+
+The grep matches `import` and `export` directives specifically, not the bare
+path. A looser search also hits the doc comment that states the rule, which
+fails the build for describing it - a false positive that survived until the
+publication pass because CI has never actually run.
 
 The cost lands in exactly one place: the host writes the `CustomPainter`.
 Monowave's job is to make that a few lines rather than a research project, which is what `WaveformViewport` and the zero-copy peak views are for.

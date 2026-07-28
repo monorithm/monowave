@@ -59,7 +59,10 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         shell: bash
         run: |
-          if git grep -lE "package:flutter/(widgets|material|cupertino)\.dart" -- lib/; then
+          # Matches import and export directives, not prose. A bare search for
+          # the path also hits the doc comment that *describes* this invariant,
+          # which is a false positive that fails the build for saying so.
+          if git grep -lE "^\s*(import|export)\s+'package:flutter/(widgets|material|cupertino)\.dart'" -- lib/; then
             echo "::error::monowave must not import Flutter's widget layer. The host writes the painter."
             exit 1
           fi
