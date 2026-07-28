@@ -19,7 +19,7 @@ class WaveformStyle {
     this.minBarHeight = 1.5,
     this.playheadWidth = 2.0,
     this.normalize = true,
-    this.maxGain = 12.0,
+    this.maxGain = 8.0,
   });
 
   final Color played;
@@ -120,7 +120,10 @@ class PeakWaveform extends StatelessWidget {
       return low > high ? low : high;
     })..sort();
 
-    final reference = magnitudes[(pairs * 0.9).floor().clamp(0, pairs - 1)];
+    // 98th, not 90th. A lower percentile fills the box more eagerly but clips
+    // everything above it, and clipping that is invisible at 160px reads as a
+    // barcode once the canvas is tall.
+    final reference = magnitudes[(pairs * 0.98).floor().clamp(0, pairs - 1)];
     if (reference <= 0) return 1;
 
     final gain = 32768 / reference;
@@ -275,7 +278,10 @@ void _paintBars(
   if (window.isEmpty || size.height <= 0) return;
 
   const fullScale = 32768.0;
-  final center = size.height / 2;
+  // Headroom, so the loudest peaks stop short of the edge instead of butting
+  // against it. A waveform that touches the frame reads as clipped whether it
+  // is or not.
+  final center = size.height / 2 * 0.88;
 
   // Not a clamp: zoomed far enough out, a slot is narrower than the minimum bar
   // width, and clamp(min, max) with min > max throws. Bars overlapping slightly
@@ -301,6 +307,8 @@ void _paintBars(
       barTop = center - style.minBarHeight / 2;
       barHeight = style.minBarHeight;
     }
+    // The centre line sits at the real middle; only the excursion is scaled.
+    barTop += size.height / 2 - center;
 
     canvas.drawRect(
       Rect.fromLTWH(
