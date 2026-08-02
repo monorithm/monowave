@@ -1,0 +1,153 @@
+name: Publish to pub.dev
+
+# Tag pushes only. pub.dev authorises a publish by checking that the run was
+# triggered by a tag matching the pattern configured on the package's admin
+# page, so a `workflow_dispatch` run cannot publish however it is invoked -- it
+# would run the whole suite and then be refused at the OIDC exchange. Leaving
+# the option out is clearer than offering a button that always fails.
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+env:
+  FLUTTER_VERSION: "3.44.8"
+
+jobs:
+  # Publishing is irreversible -- a version number can never be reused on
+  # pub.dev -- so everything that gates a normal PR gates this too.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - run: flutter config --enable-native-assets
+      - run: flutter pub get
+
+      - name: Verify formatting
+        shell: bash
+        run: |
+          files=$(git ls-files '*.dart' | grep -v '\.g\.dart$')
+          dart format --output=none --set-exit-if-changed $files
+
+      - run: flutter analyze
+
+      - run: dart test
+
+      # Headless is the organizing constraint, so it is enforced rather than
+      # documented. Matches import and export directives, not prose: a bare
+      # search for the path also hits the doc comments that *describe* the
+      # invariant, which fails the build for saying so.
+      - name: Verify the package is headless
+        shell: bash
+        run: |
+          if git grep -lE "^\s*(import|export)\s+'package:flutter/(widgets|material|cupertino)\.dart'" -- lib/; then
+            echo "::error::monowave must not import Flutter's widget layer. The host writes the painter."
+            exit 1
+          fi
+
+      # `assets/monowave.wasm` ships in the archive and is the web binding's
+      # half of the core, so a stale one is invisible to a consumer until their
+      # decode disagrees with every other platform. This is monowave's
+      # equivalent of a generated-bindings drift check, and the reason it is
+      # worth the emscripten install on a publish gate.
+      #
+      # The pinned version must match the one that produced the committed
+      # artifact; a bump changes the output bytes. When that happens, rebuild
+      # locally and commit the new artifact in the same commit.
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 6.0.4
+
+      - name: Rebuild the WASM core and check it matches what is committed
+        run: |
+          ./tool/build_wasm.sh
+          if ! git diff --quiet -- assets/monowave.wasm; then
+            echo "::error::assets/monowave.wasm is stale. Run ./tool/build_wasm.sh and commit the result."
+            exit 1
+          fi
+
+      # The cross-binding half of the determinism claim: the same C source,
+      # reached over `dart:ffi` natively and over WASM here, must produce
+      # identical peaks. The README sells this; the publish gate proves it.
+      - name: Verify the WASM build decodes identically to the native build
+        run: |
+          dart run tool/dump_fixtures.dart build/fixtures
+          node tool/verify_wasm.mjs
+
+      # The tag is the source of truth for what is being published; a mismatch
+      # against pubspec means the wrong thing is about to ship. Unconditional,
+      # because a tag push is now the only way to get here.
+      - name: Verify the tag matches pubspec version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PUBSPEC_VERSION="$(grep '^version:' pubspec.yaml | cut -d' ' -f2)"
+          if [ "$TAG_VERSION" != "$PUBSPEC_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME implies $TAG_VERSION but pubspec.yaml says $PUBSPEC_VERSION."
+            exit 1
+          fi
+
+      # pub.dev rejects a duplicate version, but only after the archive is
+      # built and uploaded. Failing here instead says plainly that the version
+      # was never bumped, which is what actually happened.
+      - name: Verify the version is not already published
+        run: |
+          VERSION="$(grep '^version:' pubspec.yaml | cut -d' ' -f2)"
+          if curl -sf "https://pub.dev/api/packages/monowave/versions/$VERSION" >/dev/null; then
+            echo "::error::monowave $VERSION is already on pub.dev. A version number cannot be reused."
+            exit 1
+          fi
+
+      # pub.dev renders the CHANGELOG on the package page, and a release with
+      # nothing written about it is the easiest thing to forget.
+      - name: Verify the CHANGELOG mentions this version
+        run: |
+          VERSION="$(grep '^version:' pubspec.yaml | cut -d' ' -f2)"
+          if ! grep -qF "## $VERSION" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## $VERSION' section."
+            exit 1
+          fi
+
+      # Catches the packaging mistakes that only show up in the archive -- a
+      # `.pubignore` that swept up `src/` or `hook/`, or one that stopped
+      # excluding `example/build` and turned a 1 MB upload into gigabytes.
+      - name: Validate the archive
+        run: flutter pub publish --dry-run
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    # Gated on a GitHub environment with required reviewers: once automated
+    # publishing is enabled, a tag push is enough to release, so the approval
+    # is the last human checkpoint before an irreversible upload.
+    environment: pub.dev
+    permissions:
+      # The only permission the OIDC exchange needs. No long-lived pub.dev
+      # credential is stored anywhere.
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      # NOT dart-lang/setup-dart/.github/workflows/publish.yml@v1: that reusable
+      # workflow provisions the Dart SDK alone, and this package depends on
+      # `flutter` from the SDK, so `pub get` cannot resolve there and validation
+      # fails before it starts.
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - run: flutter config --enable-native-assets
+      - run: flutter pub get
+
+      # With `id-token: write` GitHub injects ACTIONS_ID_TOKEN_REQUEST_URL and
+      # ACTIONS_ID_TOKEN_REQUEST_TOKEN, which pub detects and exchanges with
+      # pub.dev on its own. Nothing to configure, no secret to rotate.
+      - run: flutter pub publish --force
