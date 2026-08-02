@@ -1,0 +1,57 @@
+# NOTE: a `.pubignore` *replaces* `.gitignore` for the directory it sits in --
+# it does not add to it. So everything the root `.gitignore` excludes has to be
+# repeated here, or build output ships in the archive.
+
+# --- Mirrors .gitignore -----------------------------------------------------
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# NOTE: no leading slash on `build/` and `coverage/`, deliberately -- the root
+# `.gitignore` anchors them because git only needs the root ones. An unanchored
+# pattern matches at any depth, which is what keeps `example/build` (2.4 GB
+# after one `flutter run`) and `example/.dart_tool` (another 605 MB) out of the
+# archive without depending on `example/.gitignore` staying where it is. The
+# failure mode here is a multi-gigabyte upload, not a warning.
+pubspec.lock
+**/doc/api/
+.dart_tool/
+.flutter-plugins-dependencies
+build/
+coverage/
+
+node_modules/
+bun.lock
+
+# Integration-test fixtures, written by `dart run tool/dump_fixtures.dart`.
+/example/assets/
+
+# --- Published-archive only -------------------------------------------------
+# Commit tooling: commitlint and lefthook run in this repo, never in a
+# consumer's build.
+/package.json
+/commitlint.config.cjs
+/lefthook.yml
+
+# Contributor tooling -- the WASM build script, the fixture dumper and the
+# cross-binding digest checker. All three are things CI and maintainers run
+# against `src/`, and none of them mean anything from inside a pub cache.
+#
+# `src/` and `assets/monowave.wasm` DO ship, and must: `hook/build.dart`
+# compiles the former during a *consumer's* build, and the latter is the web
+# binding's half of the same core. Excluding either breaks every install.
+/tool/

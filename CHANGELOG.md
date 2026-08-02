@@ -4,6 +4,10 @@ All notable changes to monowave are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 follows [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+0.3.0 is the first version published to pub.dev. 0.1.0 through 0.2.0 were
+development milestones, kept here because what changed in them is still the
+history of this API.
+
 ## 0.3.0
 
 Capture keeps the audio, the pyramid carries loudness, and the native core
