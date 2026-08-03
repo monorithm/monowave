@@ -330,7 +330,8 @@ does - recording flag, frame stream, scope - with no device, and
 
 Web has no filesystem, so `decodeFile` and `exportWav` are native-only; feed
 `decodeBytes` instead. Capture on web needs a WebAudio path that does not exist
-yet - [`doc/architecture.md`](doc/architecture.md) has the reasoning.
+yet - [`docs/20-reference/20-architecture.md`](docs/20-reference/20-architecture.md)
+has the reasoning.
 
 Decoding covers WAV, MP3 and FLAC. AAC/M4A needs a platform decoder monowave
 does not carry, and reports `DecodeFailure.unsupportedFormat`; the voice-note
@@ -367,7 +368,7 @@ asset reached over FFI, not a registered plugin reached over a method channel.
 
 The full reasoning - why min/max, why a pyramid, why two rings in capture, what
 the six-target determinism check actually asserts - is in
-[`doc/architecture.md`](doc/architecture.md).
+[`docs/20-reference/20-architecture.md`](docs/20-reference/20-architecture.md).
 
 ## Contributing
 
@@ -378,7 +379,16 @@ dart test
 ```
 
 Tests are `package:test`, not `flutter_test` - there is no widget tree to bind,
-and the engine suite runs in seconds as a result.
+and the engine suite runs in seconds as a result. It is also forced:
+`flutter_test` pins `meta 1.18.0` from the SDK, which the hook packages cannot
+satisfy.
+
+`hooks` and `native_toolchain_c` are held one patch below latest for the same
+reason - `hooks 2.1.0` and `native_toolchain_c 0.19.3` moved to `meta ^1.19.0`,
+which cannot resolve alongside `flutter` at all. The upper bounds in
+`pubspec.yaml` are explicit rather than left to backtracking, which takes
+minutes against a graph this size. Raise them when Flutter's pinned `meta`
+catches up.
 
 The example gallery is the reference renderer. Monowave ships no widget, so
 every painter and gesture a host would write lives there:

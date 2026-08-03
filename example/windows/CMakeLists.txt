@@ -32,6 +32,19 @@ set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_RELEASE}")
 # Use Unicode for all projects.
 add_definitions(-DUNICODE -D_UNICODE)
 
+# permission_handler_windows includes <experimental/coroutine>, which MSVC
+# 14.51 turned from a deprecation warning into a hard error (STL1011). The
+# macro is the escape hatch that error names, and it has to be set here rather
+# than on a target: the plugin's target is created by
+# `flutter/generated_plugins.cmake` below, so a directory-scope definition set
+# before that include is what reaches it -- the same route -DUNICODE takes.
+#
+# A stopgap, not a fix. Microsoft says the header will be removed, at which
+# point this stops helping and permission_handler_windows has to have dropped
+# it. Revisit when that package publishes a version that no longer includes it;
+# nothing here needs coroutines at all.
+add_definitions(-D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)
+
 # Compilation settings that should be applied to most targets.
 #
 # Be cautious about adding new options here, as plugins use this function by

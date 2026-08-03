@@ -257,8 +257,9 @@ class WasmMonowavePlatform implements MonowavePlatform {
     'Capture is not implemented on web yet. It will not go through miniaudio '
     'when it is: the browser already provides getUserMedia and AudioWorklet, '
     'and miniaudio would drag emscripten\'s JS runtime into an artifact that '
-    'is deliberately standalone. See doc/architecture.md. Decode and '
-    'rendering work on web today.',
+    'is deliberately standalone. See '
+    'https://monorithm.github.io/opensource/monowave/latest/20-reference/20-architecture/'
+    '. Decode and rendering work on web today.',
   );
 
   /// Copies the pyramid out of the WASM heap, unlike the FFI path which views
