@@ -31,9 +31,19 @@ dependencies:
   ffi: ^2.1.4
   flutter:
     sdk: flutter
+  # HTTPS, not `git@github.com:`. The SSH form needs a key, and no CI runner
+  # has one, so every job died in `pub get` before it built anything -- and
+  # because Flutter resolves `example/` as part of the package's own `pub get`,
+  # that took the Package jobs down too, not just the ones that build the
+  # example. Works locally either way, which is how it stayed broken.
+  #
+  # The pin is still v2.0.0 by tag. monokit is now published as `monokit_ui`,
+  # so this wants to become a hosted `monokit_ui:` dependency -- but 2.0.0 to
+  # 3.0.0 crosses two sets of breaking changes, so it is its own change rather
+  # than a rider on a CI fix.
   monokit:
     git:
-      url: git@github.com:monorithm/monokit.git
+      url: https://github.com/monorithm/monokit.git
       ref: v2.0.0
   monowave:
     path: ..

@@ -294,7 +294,7 @@ packages:
       path: "."
       ref: "v2.0.0"
       resolved-ref: "3245f5c3adb121a75e07683a7c424a844a1ea5b5"
-      url: "git@github.com:monorithm/monokit.git"
+      url: "https://github.com/monorithm/monokit.git"
     source: git
     version: "2.0.0"
   monowave:
