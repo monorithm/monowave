@@ -10,60 +10,44 @@ flutter pub add monowave
 flutter config --enable-native-assets
 ```
 
-```dart
-final monowave = MonowavePlatform.instance;
-await monowave.ensureInitialized();
+**New here? Start with [your first waveform](00-start/00-tutorial.md)** -- one guided build, from an empty project to a drawn waveform and a recording on disk.
 
-final peaks = await monowave.decodeFile(path);
-final viewport = WaveformViewport.fitted(peaks, width);
+## The four kinds of page
 
-// The painter is a loop over the window; no arithmetic of its own.
-final window = viewport.resolve(peaks);
-for (var i = 0; i < window.pairCount; i++) {
-  final x = window.xOfFirstPair + i * window.pixelsPerPair;
-  // window.minAt(i) .. window.maxAt(i)
-}
-```
+| | For when you want to |
+|---|---|
+| [Start](00-start/00-tutorial.md) | learn the package by building something with it |
+| [Recipes](10-recipes/00-decode-a-file.md) | get one specific job done |
+| [Concepts](20-concepts/00-what-is-monowave.md) | understand why it is shaped this way |
+| [Reference](30-reference/00-api-map.md) | look something up |
 
-## Start here
+Each page is one of those and not the others, which is what keeps them short.
 
-- [What is monowave?](00-start/00-what-is-monowave.md) -- what the package does, what headless means here, and why one C core rather than six platform implementations.
-- [Getting started](00-start/10-getting-started.md) -- from an empty project to a waveform drawn on screen and a recording on disk.
+## Recipes
 
-## What the shape buys you
+- [Decode an audio file into peaks](10-recipes/00-decode-a-file.md)
+- [Draw a waveform](10-recipes/10-draw-a-waveform.md)
+- [Pan and zoom a waveform](10-recipes/20-pan-and-zoom.md)
+- [Place a playhead and seek](10-recipes/30-place-a-playhead.md)
+- [Record audio](10-recipes/40-record-audio.md)
+- [Draw a live meter](10-recipes/50-draw-a-live-meter.md)
+- [Edit without touching the audio](10-recipes/60-edit-non-destructively.md)
+- [Turn a drag into a selection](10-recipes/70-select-and-snap.md)
+- [Send a voice note without a decoder](10-recipes/80-send-a-voice-note.md)
+- [Test without a microphone, a file, or native code](10-recipes/90-test-without-hardware.md)
 
-**Headless.**
-No widgets.
-A decode hands back a zero-copy view over min/max peaks plus the viewport maths to place them.
-The host writes the painter.
+## Concepts
 
-**Six targets, one core.**
-Android, iOS, macOS, Windows, Linux and web run the same C, over `dart:ffi` natively and WASM on web.
-CI asserts the peaks come out byte-identical.
-
-**Bounded by pixels.**
-Peaks are a mipmap pyramid, so zooming picks a level instead of re-reading.
-A three-hour recording resolves a frame in about 6 microseconds.
-
-**Player-agnostic.**
-`WaveformTimeline` maps `Duration` to samples and back and never sees a player.
-`just_audio`, `media_kit` or your own engine are a few lines each.
-
-## Guides
-
-- [Decoding](10-guides/00-decoding.md) -- turning an audio file into a peak pyramid, and what the pyramid buys.
-- [Drawing a waveform](10-guides/10-drawing.md) -- viewport maths, the peak window, and a `CustomPainter` that is a loop with no arithmetic of its own.
-- [Capture](10-guides/20-capture.md) -- microphone capture, the two rings, the live meter, and keeping the audio.
-- [Editing](10-guides/30-editing.md) -- non-destructive documents, the sealed edit set, preview peaks, undo and export.
-- [Voice notes](10-guides/40-voice-notes.md) -- the path that skips the decoder entirely: bars computed at record time.
-- [Testing](10-guides/50-testing.md) -- driving a host's tests with no microphone, no audio file and no native core.
+- [What is monowave?](20-concepts/00-what-is-monowave.md) -- what the package does, what headless means here, and why one C core rather than six platform implementations.
+- [Architecture](20-concepts/90-architecture.md) -- why headless, why FFI rather than pigeon, how the WASM half is built, and what the pyramid costs.
 
 ## Reference
 
-- [API reference](20-reference/00-api.md) -- the whole public surface of `package:monowave/monowave.dart`, grouped by what it is for.
-- [Platform notes](20-reference/10-platforms.md) -- what each of the six targets supports, what web cannot do, and the native-assets requirement.
-- [Architecture](20-reference/20-architecture.md) -- why headless, why FFI rather than pigeon, how the WASM half is built, and what the pyramid costs.
+- [API map](30-reference/00-api-map.md) -- the public surface grouped by what it is for, and what is deliberately absent.
+- [Platform notes](30-reference/10-platforms.md) -- what each of the six targets supports, what web cannot do, and the native-assets requirement.
 
 ---
 
-monowave is on [pub.dev](https://pub.dev/packages/monowave).
+monowave is on [pub.dev](https://pub.dev/packages/monowave), and its API
+signatures are at
+[pub.dev/documentation/monowave/latest](https://pub.dev/documentation/monowave/latest/).

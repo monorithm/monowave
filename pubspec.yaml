@@ -7,7 +7,7 @@ version: 0.3.0
 # actually describes it.
 repository: https://github.com/monorithm/monowave
 issue_tracker: https://github.com/monorithm/monowave/issues
-documentation: https://monorithm.github.io/monodocs/monowave/latest/
+documentation: https://monorithm.github.io/opensource/monowave/latest/
 topics:
   - audio
   - waveform

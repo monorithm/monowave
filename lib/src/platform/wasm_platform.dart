@@ -258,7 +258,7 @@ class WasmMonowavePlatform implements MonowavePlatform {
     'when it is: the browser already provides getUserMedia and AudioWorklet, '
     'and miniaudio would drag emscripten\'s JS runtime into an artifact that '
     'is deliberately standalone. See '
-    'https://monorithm.github.io/opensource/monowave/latest/20-reference/20-architecture/'
+    'https://monorithm.github.io/opensource/monowave/latest/20-concepts/90-architecture/'
     '. Decode and rendering work on web today.',
   );
 

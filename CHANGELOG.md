@@ -191,7 +191,7 @@ rather than a dropped frame.
   blocking the producer to wait for room would stall the audio device.
 - **Web capture is not implemented**, and when it lands it will not use
   miniaudio. M0's assumption that it would need `SharedArrayBuffer` turned out
-  to be wrong twice over; see docs/20-reference/20-architecture.md for what
+  to be wrong twice over; see docs/20-concepts/90-architecture.md for what
   replaced it.
 - miniaudio must be compiled as Objective-C on Apple platforms, and
   `Language.objectiveC` only adds `-framework` flags - clang picks the language

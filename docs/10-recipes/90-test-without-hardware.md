@@ -1,7 +1,6 @@
-# Testing
+# Test without a microphone, a file, or native code
 
-A host's tests should not need a microphone, an audio file, or a native core.
-Every seam monowave exposes has a fake, and they are a first-class part of the public surface.
+Every seam monowave exposes has a fake, and they are a first-class part of the public surface -- so a host's tests need none of those three.
 
 ```dart
 import 'package:monowave/testing.dart';
@@ -107,7 +106,7 @@ platform.reductions;                             // every window passed in, in o
 ## What the fakes do not cover
 
 The fakes replace the C core, so they cannot tell you that the core is correct.
-That is monowave's own job, and it is covered by a determinism check that decodes fixtures on three host platforms and through the WASM binding, asserting identical digests -- see [architecture](../20-reference/20-architecture.md).
+That is monowave's own job, and it is covered by a determinism check that decodes fixtures on three host platforms and through the WASM binding, asserting identical digests -- see [architecture](../20-concepts/90-architecture.md).
 
 What the fakes give you is everything above the seam: your controller, your painter's inputs, your error handling, your undo stack.
 All of it runs in milliseconds under `dart test`, with no device.

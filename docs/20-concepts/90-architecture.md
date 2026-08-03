@@ -8,7 +8,7 @@ A decode hands back a zero-copy view over min/max peaks plus the viewport maths 
 What the listener sees is the host's to build.
 
 This page is the shape and the reasoning.
-The task-level API is in the [guides](../10-guides/00-decoding.md); this is why it looks the way it does.
+The task-level API is in the [recipes](../10-recipes/00-decode-a-file.md); this is why it looks the way it does.
 
 ## Why headless
 
@@ -109,6 +109,15 @@ Two constraints fell out of that spike and are load-bearing:
   `hooks 2.1.0` and `native_toolchain_c 0.19.3` moved to `meta ^1.19.0`; Flutter stable pins `meta 1.18.0`, so those versions cannot resolve alongside `flutter` at all.
   The upper bounds are explicit rather than left to backtracking, which takes minutes against a graph this size.
 
+### The bug worth knowing about
+
+Through five milestones the library was correctly bundled in every Android APK and failed to `dlopen` on every one of them: `cannot locate symbol "pow"`.
+Apple's libSystem provides the math functions implicitly; Android and Linux do not, so the build hook was missing `libraries: ['m']`.
+
+CI was green throughout, because it asserted the `.so` was *inside* the APK -- which is not the same as it loading.
+Running it on a real device is what found it.
+If you are building something similar, that is the check to write.
+
 ## The web path
 
 `dart:ffi` does not exist on web, so web gets the second binding: the same `src/` compiled to WASM by `tool/build_wasm.sh`, reached over `dart:js_interop`.
@@ -164,7 +173,7 @@ monokit is the design system on the other side of that line, and it is shaped to
 `CompactBars.heights()` feeds `MonoWaveform` directly, so a fixed-bar voice note needs no painter from anyone.
 
 What a component of that shape cannot do is min/max asymmetry and a viewport that zooms, because both need more than one number per bar.
-That is what `PeakWindow` and `WaveformViewport` are for, and the example carries a reference painter over them -- see [drawing a waveform](../10-guides/10-drawing.md).
+That is what `PeakWindow` and `WaveformViewport` are for, and the example carries a reference painter over them -- see [drawing a waveform](../10-recipes/10-draw-a-waveform.md).
 
 ## Editing is non-destructive, and undo is a snapshot
 
@@ -179,6 +188,26 @@ And undo stores whole documents rather than inverse operations, which is the sam
 Export writes 16-bit PCM WAV and only WAV.
 An edit list is meant to reproduce the source exactly where it did not change it, and re-encoding through a lossy codec would quietly break that.
 Fades are linear rather than equal-power, because they exist to take the click off an edit point rather than to crossfade two takes, and linear is what makes the endpoints exactly 0 and 1.
+
+## What a pyramid is
+
+Level 0 is the finest resolution held.
+Each level above it covers twice as many samples per min/max pair:
+
+| | Samples per pair | Pairs (3-hour file) |
+|---|---|---|
+| Level 0 | 128 | 3,720,937 |
+| Level 1 | 256 | 1,860,468 |
+| Level 2 | 512 | 930,234 |
+| ... | ... | ... |
+| Level 22 | 536,870,912 | 1 |
+
+Zooming picks a level rather than re-reading data, which is what makes a pan over a three-hour recording cost the same as a pan over thirty seconds.
+
+**The reduction is min/max, never an average.**
+Averaging collapses transients and renders speech as a flat sausage.
+Every level above the base combines its children by taking the min of the mins and the max of the maxes, so the extremes of the moment survive all the way up.
+RMS combines as the root of the mean of the squares, so a coarse level stays an RMS rather than becoming an average of averages.
 
 ## Why the pyramid is worth its memory
 

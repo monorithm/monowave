@@ -55,3 +55,5 @@ bun.lock
 # compiles the former during a *consumer's* build, and the latter is the web
 # binding's half of the same core. Excluding either breaks every install.
 /tool/
+# Website-only: HTML specimens embedded into the docs site, useless in a package.
+/demos/

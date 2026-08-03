@@ -330,7 +330,7 @@ does - recording flag, frame stream, scope - with no device, and
 
 Web has no filesystem, so `decodeFile` and `exportWav` are native-only; feed
 `decodeBytes` instead. Capture on web needs a WebAudio path that does not exist
-yet - [`docs/20-reference/20-architecture.md`](docs/20-reference/20-architecture.md)
+yet - [`docs/20-concepts/90-architecture.md`](docs/20-concepts/90-architecture.md)
 has the reasoning.
 
 Decoding covers WAV, MP3 and FLAC. AAC/M4A needs a platform decoder monowave
@@ -368,7 +368,7 @@ asset reached over FFI, not a registered plugin reached over a method channel.
 
 The full reasoning - why min/max, why a pyramid, why two rings in capture, what
 the six-target determinism check actually asserts - is in
-[`docs/20-reference/20-architecture.md`](docs/20-reference/20-architecture.md).
+[`docs/20-concepts/90-architecture.md`](docs/20-concepts/90-architecture.md).
 
 ## Contributing
 

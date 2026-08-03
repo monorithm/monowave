@@ -10,7 +10,7 @@
 
 That flag is the main cost of building the native side with a Dart build hook rather than the classic FFI plugin template.
 What it buys is no CocoaPods pod, no Gradle plugin, no per-ABI binary in the package, and one build path for all five native targets.
-See [architecture](./20-architecture.md#how-the-native-side-is-built).
+See [architecture](../20-concepts/90-architecture.md#how-the-native-side-is-built).
 
 ## Support matrix
 
@@ -38,7 +38,7 @@ Capture on web is not implemented: `WasmMonowavePlatform.openCapture` throws rat
 The AAC gap is real: it is what `record` produces by default on iOS.
 Supporting it needs a platform decoder, which would mean six implementations and exactly the drift this architecture exists to avoid.
 
-It is tolerable because the [voice-note path](../10-guides/40-voice-notes.md) never decodes at all -- the sender computes peaks at record time and ships them as metadata, so the common case never meets a decoder.
+It is tolerable because the [voice-note path](../10-recipes/80-send-a-voice-note.md) never decodes at all -- the sender computes peaks at record time and ships them as metadata, so the common case never meets a decoder.
 
 Export is always 16-bit PCM WAV, on every target that has a filesystem.
 
@@ -74,34 +74,19 @@ Linux and Windows do not gate microphone access at the app level.
 
 `libmonowave.so` is built for `arm64-v8a`, `armeabi-v7a` and `x86_64`.
 
-:::note[The bug worth knowing about] Through five milestones, the library was correctly bundled in every APK and failed to `dlopen` on every one of them: `cannot locate symbol "pow"`.
-Apple's libSystem provides the math functions implicitly; Android and Linux do not, so the build hook was missing `libraries: ['m']`.
-
-CI was green throughout, because it asserted the `.so` was *inside* the APK -- which is not the same as it loading.
-Running it on a real device is what found it.
-If you are building something similar, that is the check to write. :::
-
 ## Web
 
 The web binding loads `assets/monowave.wasm` through the Flutter asset bundle, so `rootBundle` finds it with no assumptions about how the app is served.
+The artifact ships committed rather than built during your build, so you need no C toolchain; it is bundled on all six targets even though only web reads it, because Flutter cannot scope an asset to one platform.
 
-The artifact is committed to the repository rather than built during your build.
-Requiring emscripten would make `flutter build web` fail for any app depending on monowave unless that app's CI installed a C toolchain.
-CI compensates by rebuilding it from source and asserting it matches what is committed, so the binary can never silently drift from `src/`.
-
-The cost is that the asset is bundled on all six targets even though only web reads it -- Flutter cannot scope an asset to one platform, and a few hundred kilobytes is the cheaper side of that trade.
-
-There is one behavioural difference worth knowing.
-Growing the WASM heap detaches every outstanding view over it, so the web binding **copies** the pyramid out of the heap and frees the native allocation immediately, where the native binding keeps a zero-copy view.
-Web pays a few hundred kilobytes for a normal recording; native keeps the property an audiobook needs.
+One behavioural difference reaches your code.
+The web binding **copies** the pyramid out of the WASM heap where the native binding keeps a zero-copy view, so web pays a few hundred kilobytes for a normal recording.
 `dispose()` is correct on both.
+[Architecture](../20-concepts/90-architecture.md) has the reasoning.
 
 ## Determinism
 
-The same C source, reached over `dart:ffi` natively and over WASM on web, must produce identical peaks.
-That is asserted, not assumed:
-
-- `dart test` decodes six synthesized fixtures and hashes each pyramid, on ubuntu, macOS and Windows.
-- `tool/verify_wasm.mjs` decodes the same fixtures through the WASM module and asserts the same digests.
+The same C source, reached over `dart:ffi` natively and over WASM on web, produces **identical peaks** -- asserted on every build across ubuntu, macOS, Windows and the WASM binding, not assumed.
 
 If you store peaks server-side and render them on several clients, this is the property you are relying on.
+[Architecture](../20-concepts/90-architecture.md) describes the check.

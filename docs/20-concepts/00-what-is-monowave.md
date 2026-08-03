@@ -20,7 +20,7 @@ The rule is checkable, and CI checks it: nothing under `lib/` imports Flutter's 
 A grep returning nothing is the invariant.
 
 The cost lands in exactly one place -- you write the `CustomPainter`.
-Monowave's job is to make that a few lines rather than a research project, which is what [`WaveformViewport`](../10-guides/10-drawing.md) is for:
+Monowave's job is to make that a few lines rather than a research project, which is what [`WaveformViewport`](../10-recipes/10-draw-a-waveform.md) is for:
 
 ```dart
 final window = viewport.resolve(peaks);
@@ -75,14 +75,14 @@ This is the same call monolens's `EditHistory` makes, for the same reasons.
 | Widgets | The package is headless. You write the painter. |
 | Playback | `WaveformTimeline` maps `Duration` to samples and never sees a player. Use `just_audio`, `media_kit` or your own. |
 | A permissions API | Most apps already have one, and two requesters produce two prompts. |
-| AAC / M4A decoding | It needs a platform decoder, which would mean six implementations and the drift this design avoids. See [platform notes](../20-reference/10-platforms.md). |
+| AAC / M4A decoding | It needs a platform decoder, which would mean six implementations and the drift this design avoids. See [platform notes](../30-reference/10-platforms.md). |
 | Capture on web | Decode and drawing work there; capture needs an AudioWorklet that does not exist yet. |
 
-The AAC gap is real, and it is tolerable for one reason: the [voice-note path](../10-guides/40-voice-notes.md) never decodes at all.
+The AAC gap is real, and it is tolerable for one reason: the [voice-note path](../10-recipes/80-send-a-voice-note.md) never decodes at all.
 The sender computes peaks at record time and ships roughly 64 bytes of metadata beside the audio, so the common case never meets a decoder.
 
 ## Where to go next
 
-- [Getting started](./10-getting-started.md) -- from an empty project to a waveform on screen and a recording on disk.
-- [Decoding](../10-guides/00-decoding.md) and [drawing](../10-guides/10-drawing.md) -- the two halves of showing an existing file.
-- [Architecture](../20-reference/20-architecture.md) -- why FFI rather than pigeon, how the WASM half is built, and what the determinism check actually asserts.
+- [Getting started](../00-start/00-tutorial.md) -- from an empty project to a waveform on screen and a recording on disk.
+- [Decoding](../10-recipes/00-decode-a-file.md) and [drawing](../10-recipes/10-draw-a-waveform.md) -- the two halves of showing an existing file.
+- [Architecture](./90-architecture.md) -- why FFI rather than pigeon, how the WASM half is built, and what the determinism check actually asserts.
