@@ -66,16 +66,19 @@ The two bindings are alternatives, never both in one build, and both reach the s
 Monolens routes all platform traffic through [Pigeon](https://pub.dev/packages/pigeon), and argues for it well: the payloads are structured, three languages have to agree, and a schema change should break the build rather than a device.
 Monowave breaks with that, and the divergence is a decision rather than an oversight.
 
-**Pigeon cannot carry the realtime path.** A capture callback fires roughly 86 times a second on the audio thread, where it must not allocate, take a lock, or call into a message channel.
+**Pigeon cannot carry the realtime path.**
+A capture callback fires roughly 86 times a second on the audio thread, where it must not allocate, take a lock, or call into a message channel.
 The transport has to be a lock-free ring buffer in shared memory.
 That is not a payload-shape problem, which is what pigeon solves.
 
-**Maximizing platform coverage inverts the cost.** Pigeon means one native implementation per platform.
+**Maximizing platform coverage inverts the cost.**
+Pigeon means one native implementation per platform.
 For camera work across two platforms that is correct.
 For audio across six it is six decoders that will drift, and drift in a waveform is visible: the same file renders differently on Android and web.
 One C core compiled via FFI on the five native targets and to WASM for web is one implementation, and it lets CI *assert* that peaks come out byte-identical everywhere.
 
-**What is kept unchanged is the seam.** `MonowavePlatform` is an interface in front of the bindings rather than direct calls into them, exactly as `MonolensPlatform` sits in front of the generated pigeon API.
+**What is kept unchanged is the seam.**
+`MonowavePlatform` is an interface in front of the bindings rather than direct calls into them, exactly as `MonolensPlatform` sits in front of the generated pigeon API.
 That indirection buys the same two things.
 The whole engine -- peaks, mipmaps, viewport, selection, undo -- is testable against a fake with no native code and no device.
 And it is the line a federated split would cut along, if per-platform versioning is ever needed.
@@ -98,17 +101,20 @@ That flag is the main cost of this approach, and it is why the mechanism was tes
 
 Two constraints fell out of that spike and are load-bearing:
 
-- **Tests are `package:test`, not `flutter_test`.** A headless package has no widget tree to bind, so this is the right shape anyway -- but it is also forced.
+- **Tests are `package:test`, not `flutter_test`.**
+  A headless package has no widget tree to bind, so this is the right shape anyway -- but it is also forced.
   `flutter_test` pins `meta 1.18.0` from the SDK, which the hook packages cannot satisfy.
   The upside is that the engine suite runs under `dart test` in seconds.
-- **The hook packages are held one patch below latest.** `hooks 2.1.0` and `native_toolchain_c 0.19.3` moved to `meta ^1.19.0`; Flutter stable pins `meta 1.18.0`, so those versions cannot resolve alongside `flutter` at all.
+- **The hook packages are held one patch below latest.**
+  `hooks 2.1.0` and `native_toolchain_c 0.19.3` moved to `meta ^1.19.0`; Flutter stable pins `meta 1.18.0`, so those versions cannot resolve alongside `flutter` at all.
   The upper bounds are explicit rather than left to backtracking, which takes minutes against a graph this size.
 
 ## The web path
 
 `dart:ffi` does not exist on web, so web gets the second binding: the same `src/` compiled to WASM by `tool/build_wasm.sh`, reached over `dart:js_interop`.
 
-**The WASM artifact is committed, and shipped as a Flutter asset.** Committing it avoids requiring emscripten in every consumer's build, which would make a `flutter build web` of any app depending on monowave fail unless that app's CI installed a C toolchain.
+**The WASM artifact is committed, and shipped as a Flutter asset.**
+Committing it avoids requiring emscripten in every consumer's build, which would make a `flutter build web` of any app depending on monowave fail unless that app's CI installed a C toolchain.
 CI compensates by rebuilding the artifact from source and asserting it matches what is committed, so the binary can never silently drift from `src/`.
 
 `WasmMonowavePlatform` never answers from a pure-Dart shim; if the module is missing it throws.
@@ -138,14 +144,16 @@ But the blocking problem is a different one.
 Either way, miniaudio's web backend needs emscripten's JavaScript runtime, and monowave's artifact is deliberately `-sSTANDALONE_WASM --no-entry` with no JS glue at all.
 Adopting it would mean a second, differently-built WASM module, `ASYNCIFY` overhead, and a larger artifact -- one that ships on all six targets even though only web reads it.
 
-**Decision: web capture will be a small AudioWorklet written directly against the browser's own APIs.** The browser already provides `getUserMedia` and `AudioWorklet`; miniaudio's value on native is that it abstracts five different backends, and on web there is only one.
+**Decision: web capture will be a small AudioWorklet written directly against the browser's own APIs.**
+The browser already provides `getUserMedia` and `AudioWorklet`; miniaudio's value on native is that it abstracts five different backends, and on web there is only one.
 The reduction it would be doing is a min and a max over int16 values -- perhaps fifteen lines of JavaScript.
 
 This is the one place monowave would not run the same C on every target, so it is worth being precise about the cost.
 For decoding, identical peaks matter enormously: a stored waveform has to look the same on every client.
 For capture, the reduction is `min` and `max` over integers, which is exact in both languages by construction rather than by luck -- there is no floating point in the path where a last bit could differ.
 
-**Status: not implemented.** Decode and rendering work on web today; capture does not, and `openCapture` throws rather than pretending otherwise.
+**Status: not implemented.**
+Decode and rendering work on web today; capture does not, and `openCapture` throws rather than pretending otherwise.
 
 ## Where drawing stops being monowave's problem
 
@@ -176,8 +184,7 @@ Fades are linear rather than equal-power, because they exist to take the click o
 
 The pyramid doubles the memory of the base level, and what it buys is that preparing a frame costs the same whether the recording is thirty seconds or three hours.
 
-Measured on a three-hour pyramid -- 476 million samples, 3.7 million pairs at the 128-sample base, 23 levels -- a full zoom sweep resolves the viewport and reads every visible pair in **5.6 microseconds per frame**.
-A 60fps budget is 16,667 microseconds.
+Measured on a three-hour pyramid -- 476 million samples, 3.7 million pairs at the 128-sample base, 23 levels -- a full zoom sweep resolves the viewport and reads every visible pair in **5.6 microseconds per frame**. A 60fps budget is 16,667 microseconds.
 The test asserts a ceiling rather than the exact figure, because the number varies by machine and the property being protected is that it stays bounded by screen pixels rather than by file length.
 
 If that test ever fails, zooming a long file has started scanning data instead of picking a level, and the pyramid has stopped earning its keep.

@@ -113,7 +113,8 @@ viewport = viewport.resized(newWidth);
 
 Anchoring a zoom on the focal point is what makes a pinch feel attached to the audio rather than to the widget.
 
-**Always `clampedTo`.** It bounds scroll so the audio cannot be lost off-screen, refuses to zoom out past the whole file, and refuses to zoom in past `finestSamplesPerPixel` -- there is no finer data in memory, so the result would just be a stretched version of the same bars.
+**Always `clampedTo`.**
+It bounds scroll so the audio cannot be lost off-screen, refuses to zoom out past the whole file, and refuses to zoom in past `finestSamplesPerPixel` -- there is no finer data in memory, so the result would just be a stretched version of the same bars.
 
 Use a `ScaleGestureRecognizer` rather than a pan recognizer.
 A pan recognizer never reports a second finger, so a pinch is invisible to it; a scale recognizer with a single pointer reports a drag.
@@ -140,10 +141,12 @@ final t = timeline.timeAtProgress(0.35);
 
 Two of these will bite, so they are worth stating plainly.
 
-**Split the playhead out of the body.** Put the two in separate painters behind a `RepaintBoundary` and let the body's `shouldRepaint` ignore progress entirely.
+**Split the playhead out of the body.**
+Put the two in separate painters behind a `RepaintBoundary` and let the body's `shouldRepaint` ignore progress entirely.
 Scrubbing then repaints a clipped overlay rather than every bar in the file.
 
-**For a live meter, key on `revision`, not `length`.** `CaptureScope` is a ring that mutates in place, so once it is full its length never changes again -- a `shouldRepaint` keyed on length silently stops repainting.
+**For a live meter, key on `revision`, not `length`.**
+`CaptureScope` is a ring that mutates in place, so once it is full its length never changes again -- a `shouldRepaint` keyed on length silently stops repainting.
 See [capture](./20-capture.md).
 
 ## What a design-system waveform cannot do
