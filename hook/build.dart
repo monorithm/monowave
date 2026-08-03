@@ -53,6 +53,20 @@ void main(List<String> args) async {
       _ => false,
     };
 
+    // MSVC still defaults to C89 and rejects `<stdatomic.h>` from inside its
+    // own vcruntime header - "C atomics require C11 or later". wf_capture.c
+    // and miniaudio both use C11 atomics, so on Windows the standard has to be
+    // stated; clang and gcc already default past C11 and need nothing.
+    //
+    // Scoped to Windows rather than set for every target, because on Apple
+    // this same builder compiles an Objective-C translation unit, and changing
+    // the language standard under it to fix a problem that platform does not
+    // have is how the Apple build breaks next.
+    final cStandard = switch (input.config.code.targetOS) {
+      OS.windows => 'c11',
+      _ => null,
+    };
+
     final builder = CBuilder.library(
       name: 'monowave',
       assetName: 'src/native/monowave_bindings.dart',
@@ -63,6 +77,7 @@ void main(List<String> args) async {
         if (isApple) 'src/wf_miniaudio.m' else 'src/wf_miniaudio.c',
       ],
       language: isApple ? Language.objectiveC : Language.c,
+      std: cStandard,
       frameworks: isApple ? _appleFrameworks : const [],
       libraries: needsLibm ? const ['m'] : const [],
     );
