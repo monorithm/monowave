@@ -53,19 +53,21 @@ void main(List<String> args) async {
       _ => false,
     };
 
-    // MSVC still defaults to C89 and rejects `<stdatomic.h>` from inside its
-    // own vcruntime header - "C atomics require C11 or later". wf_capture.c
-    // and miniaudio both use C11 atomics, so on Windows the standard has to be
-    // stated; clang and gcc already default past C11 and need nothing.
+    // wf_capture.c and the vendored miniaudio both use C11 atomics, and MSVC
+    // guards `<stdatomic.h>` twice. `/std:c11` clears the first guard ("C
+    // atomics require C11 or later"); the second ("C atomic support is not
+    // enabled") only lifts with `/experimental:c11atomics`, because MSVC still
+    // ships C11 atomics as opt-in. Both are needed - the flag alone is
+    // rejected without the standard, and the standard alone gets you the
+    // second #error.
     //
-    // Scoped to Windows rather than set for every target, because on Apple
-    // this same builder compiles an Objective-C translation unit, and changing
-    // the language standard under it to fix a problem that platform does not
-    // have is how the Apple build breaks next.
-    final cStandard = switch (input.config.code.targetOS) {
-      OS.windows => 'c11',
-      _ => null,
-    };
+    // clang and gcc default past C11 and need neither, so both are scoped to
+    // Windows: `/experimental:c11atomics` is not a flag they would even parse,
+    // and on Apple this same builder compiles an Objective-C translation unit
+    // where moving the language standard is how that build breaks next.
+    final isWindows = input.config.code.targetOS == OS.windows;
+    final cStandard = isWindows ? 'c11' : null;
+    const msvcAtomics = ['/experimental:c11atomics'];
 
     final builder = CBuilder.library(
       name: 'monowave',
@@ -78,6 +80,7 @@ void main(List<String> args) async {
       ],
       language: isApple ? Language.objectiveC : Language.c,
       std: cStandard,
+      flags: isWindows ? msvcAtomics : const [],
       frameworks: isApple ? _appleFrameworks : const [],
       libraries: needsLibm ? const ['m'] : const [],
     );
