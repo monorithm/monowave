@@ -22,10 +22,10 @@ jobs:
     steps:
       - name: Skipped -- DOCS_SYNC_TOKEN is not set
         if: env.HAS_DOCS_TOKEN != 'true'
-        run: |
-          echo "::notice::DOCS_SYNC_TOKEN is not set, so the site was not asked" \
-               "to rebuild. Its docs will refresh on the next push to" \
-               "monorithm/monorithm.github.io, or a manual Deploy run."
+        run: >-
+          echo "::notice::DOCS_SYNC_TOKEN is not set, so the site was not asked to
+          rebuild. These docs will refresh on the next push to
+          monorithm/monorithm.github.io, or a manual Deploy run there."
 
       - name: Trigger a rebuild of monorithm.github.io
         if: env.HAS_DOCS_TOKEN == 'true'
