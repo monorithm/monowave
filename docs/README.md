@@ -32,21 +32,17 @@ for (var i = 0; i < window.pairCount; i++) {
 
 ## What the shape buys you
 
-**Headless.**
-No widgets.
+**Headless.** No widgets.
 A decode hands back a zero-copy view over min/max peaks plus the viewport maths to place them.
 The host writes the painter.
 
-**Six targets, one core.**
-Android, iOS, macOS, Windows, Linux and web run the same C, over `dart:ffi` natively and WASM on web.
+**Six targets, one core.** Android, iOS, macOS, Windows, Linux and web run the same C, over `dart:ffi` natively and WASM on web.
 CI asserts the peaks come out byte-identical.
 
-**Bounded by pixels.**
-Peaks are a mipmap pyramid, so zooming picks a level instead of re-reading.
+**Bounded by pixels.** Peaks are a mipmap pyramid, so zooming picks a level instead of re-reading.
 A three-hour recording resolves a frame in about 6 microseconds.
 
-**Player-agnostic.**
-`WaveformTimeline` maps `Duration` to samples and back and never sees a player.
+**Player-agnostic.** `WaveformTimeline` maps `Duration` to samples and back and never sees a player.
 `just_audio`, `media_kit` or your own engine are a few lines each.
 
 ## Guides

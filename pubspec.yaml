@@ -31,6 +31,11 @@ dependencies:
   ffi: ^2.1.4
   flutter:
     sdk: flutter
+  # Held one patch below latest, deliberately: hooks 2.1.0 and
+  # native_toolchain_c 0.19.3 moved to `meta ^1.19.0`, and Flutter stable pins
+  # meta 1.18.0, so those versions cannot resolve alongside `flutter` at all.
+  # The upper bounds are explicit rather than left to backtracking, which takes
+  # minutes against a graph this size. Raise them when Flutter's meta catches up.
   hooks: ">=2.0.2 <2.1.0"
   native_toolchain_c: ">=0.19.0 <0.19.3"
 

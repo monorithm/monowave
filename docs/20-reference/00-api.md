@@ -1,11 +1,9 @@
 # API reference
 
-The whole public surface of `package:monowave/monowave.dart`, grouped by what it
-is for. Signatures live in the dartdoc on each type; this is the map and the
-reasoning.
+The whole public surface of `package:monowave/monowave.dart`, grouped by what it is for.
+Signatures live in the dartdoc on each type; this is the map and the reasoning.
 
-Test doubles are in `package:monowave/testing.dart` and are covered in
-[testing](../10-guides/50-testing.md).
+Test doubles are in `package:monowave/testing.dart` and are covered in [testing](../10-guides/50-testing.md).
 
 ## The platform seam
 
@@ -28,11 +26,8 @@ Future<void> exportWav({required String sourcePath, required String outputPath,
 Future<CaptureSession> openCapture([CaptureConfig config]);
 ```
 
-`MonowavePlatform` is an interface in front of the bindings rather than direct
-calls into them. That indirection is what lets the whole engine -- peaks,
-mipmaps, viewport, selection, undo -- be exercised against a fake with no native
-code and no device, and it is the line a federated split would cut along if
-per-platform versioning is ever needed.
+`MonowavePlatform` is an interface in front of the bindings rather than direct calls into them.
+That indirection is what lets the whole engine -- peaks, mipmaps, viewport, selection, undo -- be exercised against a fake with no native code and no device, and it is the line a federated split would cut along if per-platform versioning is ever needed.
 
 See [decoding](../10-guides/00-decoding.md).
 
@@ -67,9 +62,8 @@ double xForSample(num sample);
 double sampleAtX(double x);
 ```
 
-Reduction is always min/max, never an average: averaging collapses transients
-and renders speech as a flat sausage. `rms` is a second series to overlay, not a
-replacement.
+Reduction is always min/max, never an average: averaging collapses transients and renders speech as a flat sausage.
+`rms` is a second series to overlay, not a replacement.
 
 See [drawing a waveform](../10-guides/10-drawing.md).
 
@@ -99,9 +93,8 @@ Future<WaveformPeaks> stop();   // caller owns the result
 Future<void> dispose();
 ```
 
-`CaptureScope` exposes `length`, `revision`, `minAt`, `maxAt`, `rmsAt`,
-`amplitudeAt` and `amplitudes()`. **Repaint on `revision`, not `length`** -- the
-scope is a ring that mutates in place, so once full its length never changes.
+`CaptureScope` exposes `length`, `revision`, `minAt`, `maxAt`, `rmsAt`, `amplitudeAt` and `amplitudes()`.
+**Repaint on `revision`, not `length`** -- the scope is a ring that mutates in place, so once full its length never changes.
 
 See [capture](../10-guides/20-capture.md).
 
@@ -129,8 +122,7 @@ WaveformDocument applying(WaveformEdit edit);
 WaveformPeaks previewPeaks(WaveformPeaks source);
 ```
 
-The edit set is sealed so an exporter can switch over it exhaustively and the
-compiler catches a kind that was not handled.
+The edit set is sealed so an exporter can switch over it exhaustively and the compiler catches a kind that was not handled.
 
 See [editing](../10-guides/30-editing.md).
 
