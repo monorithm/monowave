@@ -1,0 +1,27 @@
+name: Rebuild docs site
+
+# The documentation in this repo is published by monorithm.github.io, which
+# checks this repo out at build time. Nothing changes in that repo when these
+# files change, so a push here has to say so.
+#
+# DOCS_SYNC_TOKEN is a fine-grained PAT with Contents:Write on
+# monorithm/monorithm.github.io -- repository_dispatch needs write, not read.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+  workflow_dispatch:
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger a rebuild of monorithm.github.io
+        env:
+          GH_TOKEN: ${{ secrets.DOCS_SYNC_TOKEN }}
+        run: |
+          gh api repos/monorithm/monorithm.github.io/dispatches \
+            -f event_type=content-updated \
+            -F 'client_payload[repo]=${{ github.repository }}' \
+            -F 'client_payload[sha]=${{ github.sha }}'
