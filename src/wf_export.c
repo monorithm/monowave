@@ -13,6 +13,26 @@
 
 #include "monowave.h"
 
+// Outside the stdio guard on purpose. The envelope is pure arithmetic with no
+// filesystem in it, and the WASM build needs the same curve when web playback
+// arrives -- see ROADMAP.md, M10.
+float wf_envelope(int64_t offset, int64_t length, int32_t fade_in,
+                  int32_t fade_out) {
+  float envelope = 1.0f;
+
+  if (fade_in > 0 && offset < fade_in) {
+    envelope *= (float)offset / (float)fade_in;
+  }
+  if (fade_out > 0) {
+    const int64_t from_end = length - 1 - offset;
+    if (from_end < fade_out) {
+      envelope *= (float)from_end / (float)fade_out;
+    }
+  }
+
+  return envelope < 0.0f ? 0.0f : envelope;
+}
+
 #ifndef WF_NO_STDIO
 
 // The implementations live in wf_decode.c; these are declarations only.
@@ -109,111 +129,221 @@ static void wf_source_close(wf_source *source) {
   }
 }
 
-/// Linear gain envelope for one frame of a region.
+/// A render in progress: a source, a copy of the region list, and a position.
 ///
-/// Linear rather than equal-power: a fade here is for trimming clicks off an
-/// edit point, not for crossfading two takes, and linear is what makes the
-/// endpoints exactly 0 and 1.
-static float wf_envelope(int64_t offset, int64_t length, int32_t fade_in,
-                         int32_t fade_out) {
-  float envelope = 1.0f;
+/// The exporter is a thin file sink over this. Keeping one loop is what makes
+/// "a preview sounds like the export" structural rather than a property some
+/// test has to keep policing.
+struct wf_render {
+  wf_source source;
+  wf_region *regions;
+  int32_t region_count;
+  int64_t length;
 
-  if (fade_in > 0 && offset < fade_in) {
-    envelope *= (float)offset / (float)fade_in;
+  int32_t index;   // the region being read
+  int64_t offset;  // frames already emitted from that region
+  int seek_pending;
+  int failed;
+};
+
+/// Frames a region contributes. Zero and negative lengths collapse to zero,
+/// which is what drops them from the output entirely.
+static int64_t wf_region_frames(const wf_region *region) {
+  const int64_t length =
+      (int64_t)region->source_end - (int64_t)region->source_start;
+  return length > 0 ? length : 0;
+}
+
+wf_render *wf_render_open(const char *src_path, const wf_region *regions,
+                          int32_t region_count, int32_t *out_error) {
+  int32_t ignored = 0;
+  if (out_error == NULL) out_error = &ignored;
+
+  if (src_path == NULL || regions == NULL || region_count <= 0) {
+    *out_error = WF_ERR_ARGUMENT;
+    return NULL;
   }
-  if (fade_out > 0) {
-    const int64_t from_end = length - 1 - offset;
-    if (from_end < fade_out) {
-      envelope *= (float)from_end / (float)fade_out;
+
+  wf_render *render = (wf_render *)calloc(1, sizeof(wf_render));
+  if (render == NULL) {
+    *out_error = WF_ERR_MEMORY;
+    return NULL;
+  }
+
+  render->regions =
+      (wf_region *)calloc((size_t)region_count, sizeof(wf_region));
+  if (render->regions == NULL) {
+    free(render);
+    *out_error = WF_ERR_MEMORY;
+    return NULL;
+  }
+
+  if (!wf_source_open(&render->source, src_path)) {
+    free(render->regions);
+    free(render);
+    *out_error = WF_ERR_OPEN;
+    return NULL;
+  }
+
+  // Copied rather than referenced: a render outlives the caller's array once
+  // playback drives it from another thread.
+  memcpy(render->regions, regions, (size_t)region_count * sizeof(wf_region));
+  render->region_count = region_count;
+  render->seek_pending = 1;
+  for (int32_t index = 0; index < region_count; index++) {
+    render->length += wf_region_frames(&regions[index]);
+  }
+
+  *out_error = WF_OK;
+  return render;
+}
+
+void wf_render_close(wf_render *render) {
+  if (render == NULL) return;
+  wf_source_close(&render->source);
+  free(render->regions);
+  free(render);
+}
+
+int32_t wf_render_sample_rate(const wf_render *render) {
+  return render == NULL ? 0 : render->source.sample_rate;
+}
+
+int32_t wf_render_channels(const wf_render *render) {
+  return render == NULL ? 0 : render->source.channels;
+}
+
+double wf_render_length_frames(const wf_render *render) {
+  return render == NULL ? 0.0 : (double)render->length;
+}
+
+int32_t wf_render_read(wf_render *render, int16_t *out, int32_t max_frames) {
+  if (render == NULL || out == NULL || max_frames <= 0) return 0;
+  if (render->failed) return -1;
+
+  const int32_t channels = render->source.channels;
+  int32_t written = 0;
+
+  while (written < max_frames && render->index < render->region_count) {
+    const wf_region region = render->regions[render->index];
+    const int64_t length = wf_region_frames(&region);
+    if (length == 0) {
+      render->index++;
+      render->offset = 0;
+      render->seek_pending = 1;
+      continue;
+    }
+
+    if (render->seek_pending) {
+      const int64_t at = (int64_t)region.source_start + render->offset;
+      if (!wf_source_seek(&render->source, at)) {
+        render->failed = 1;
+        return written > 0 ? written : -1;
+      }
+      render->seek_pending = 0;
+    }
+
+    int64_t want = (int64_t)max_frames - written;
+    if (want > length - render->offset) want = length - render->offset;
+
+    int16_t *block = out + (int64_t)written * channels;
+    const int64_t got = wf_source_read(&render->source, block, want);
+    if (got <= 0) {
+      // The source ended inside this region. Keep what exists and move to the
+      // next one, which is what the exporter has always done.
+      render->index++;
+      render->offset = 0;
+      render->seek_pending = 1;
+      continue;
+    }
+
+    // Gain and fades are applied per sample, in place, before the caller sees
+    // them. The envelope offset is absolute within the region, so the size of
+    // this block cannot change a single output sample.
+    for (int64_t frame = 0; frame < got; frame++) {
+      const float envelope =
+          region.gain * wf_envelope(render->offset + frame, length,
+                                    region.fade_in, region.fade_out);
+      if (envelope == 1.0f) continue;
+
+      for (int32_t channel = 0; channel < channels; channel++) {
+        const int64_t at = frame * channels + channel;
+        float scaled = (float)block[at] * envelope;
+        if (scaled > 32767.0f) scaled = 32767.0f;
+        if (scaled < -32768.0f) scaled = -32768.0f;
+        block[at] = (int16_t)scaled;
+      }
+    }
+
+    written += (int32_t)got;
+    render->offset += got;
+    if (render->offset >= length) {
+      render->index++;
+      render->offset = 0;
+      render->seek_pending = 1;
     }
   }
 
-  return envelope < 0.0f ? 0.0f : envelope;
+  return written;
 }
 
 int32_t wf_export_wav(const char *src_path, const char *out_path,
                       const wf_region *regions, int32_t region_count) {
-  if (src_path == NULL || out_path == NULL || regions == NULL ||
-      region_count <= 0) {
-    return WF_ERR_ARGUMENT;
-  }
+  if (out_path == NULL) return WF_ERR_ARGUMENT;
 
-  wf_source source;
-  memset(&source, 0, sizeof(source));
-  if (!wf_source_open(&source, src_path)) return WF_ERR_OPEN;
+  // The exporter is now a file sink over wf_render. Every decision about what
+  // the samples are lives in wf_render_read, so an export and a preview cannot
+  // drift apart.
+  int32_t error = WF_OK;
+  wf_render *render = wf_render_open(src_path, regions, region_count, &error);
+  if (render == NULL) return error;
+
+  const int32_t channels = wf_render_channels(render);
 
   drwav_data_format format;
   format.container = drwav_container_riff;
   format.format = DR_WAVE_FORMAT_PCM;
-  format.channels = (drwav_uint32)source.channels;
-  format.sampleRate = (drwav_uint32)source.sample_rate;
+  format.channels = (drwav_uint32)channels;
+  format.sampleRate = (drwav_uint32)wf_render_sample_rate(render);
   format.bitsPerSample = 16;
 
   drwav out;
   if (!drwav_init_file_write(&out, out_path, &format, NULL)) {
-    wf_source_close(&source);
+    wf_render_close(render);
     return WF_ERR_OPEN;
   }
 
-  const int64_t chunk_frames = 4096;
-  int16_t *chunk =
-      (int16_t *)malloc((size_t)chunk_frames * source.channels *
-                        sizeof(int16_t));
+  // Unchanged at 4096. The renderer applies the same envelope whatever the
+  // block size, so this number is a memory choice and nothing more.
+  const int32_t chunk_frames = 4096;
+  int16_t *chunk = (int16_t *)malloc((size_t)chunk_frames * (size_t)channels *
+                                     sizeof(int16_t));
   if (chunk == NULL) {
     drwav_uninit(&out);
-    wf_source_close(&source);
+    wf_render_close(render);
     return WF_ERR_MEMORY;
   }
 
   int32_t status = WF_OK;
 
-  for (int32_t index = 0; index < region_count && status == WF_OK; index++) {
-    const wf_region region = regions[index];
-    const int64_t start = (int64_t)region.source_start;
-    const int64_t end = (int64_t)region.source_end;
-    const int64_t length = end - start;
-    if (length <= 0) continue;
-
-    if (!wf_source_seek(&source, start)) {
+  for (;;) {
+    const int32_t got = wf_render_read(render, chunk, chunk_frames);
+    if (got < 0) {
       status = WF_ERR_DECODE;
       break;
     }
+    if (got == 0) break;
 
-    int64_t written = 0;
-    while (written < length) {
-      const int64_t want =
-          (length - written) < chunk_frames ? (length - written) : chunk_frames;
-      const int64_t got = wf_source_read(&source, chunk, want);
-      if (got <= 0) break;  // source ended early; write what exists
-
-      // Gain and fades are applied per sample, in place, before writing.
-      for (int64_t frame = 0; frame < got; frame++) {
-        const float envelope =
-            region.gain * wf_envelope(written + frame, length, region.fade_in,
-                                      region.fade_out);
-        if (envelope == 1.0f) continue;
-
-        for (int32_t channel = 0; channel < source.channels; channel++) {
-          const int64_t at = frame * source.channels + channel;
-          float scaled = (float)chunk[at] * envelope;
-          if (scaled > 32767.0f) scaled = 32767.0f;
-          if (scaled < -32768.0f) scaled = -32768.0f;
-          chunk[at] = (int16_t)scaled;
-        }
-      }
-
-      if (drwav_write_pcm_frames(&out, (drwav_uint64)got, chunk) !=
-          (drwav_uint64)got) {
-        status = WF_ERR_OPEN;
-        break;
-      }
-      written += got;
+    if (drwav_write_pcm_frames(&out, (drwav_uint64)got, chunk) !=
+        (drwav_uint64)got) {
+      status = WF_ERR_OPEN;
+      break;
     }
   }
 
   free(chunk);
   drwav_uninit(&out);
-  wf_source_close(&source);
+  wf_render_close(render);
   return status;
 }
 
@@ -228,6 +358,42 @@ int32_t wf_export_wav(const char *src_path, const char *out_path,
   // Web has no filesystem to write to. An in-memory variant would be the way
   // to support it, if something ever needs one.
   return WF_ERR_OPEN;
+}
+
+// The renderer reads a source through the same path-based decoders, so it is
+// unavailable here for the same reason. Web playback does not go through this
+// at all; see ROADMAP.md, M10.
+wf_render *wf_render_open(const char *src_path, const wf_region *regions,
+                          int32_t region_count, int32_t *out_error) {
+  (void)src_path;
+  (void)regions;
+  (void)region_count;
+  if (out_error != NULL) *out_error = WF_ERR_OPEN;
+  return NULL;
+}
+
+void wf_render_close(wf_render *render) { (void)render; }
+
+int32_t wf_render_sample_rate(const wf_render *render) {
+  (void)render;
+  return 0;
+}
+
+int32_t wf_render_channels(const wf_render *render) {
+  (void)render;
+  return 0;
+}
+
+double wf_render_length_frames(const wf_render *render) {
+  (void)render;
+  return 0.0;
+}
+
+int32_t wf_render_read(wf_render *render, int16_t *out, int32_t max_frames) {
+  (void)render;
+  (void)out;
+  (void)max_frames;
+  return -1;
 }
 
 #endif  // WF_NO_STDIO

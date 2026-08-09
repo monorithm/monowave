@@ -254,6 +254,17 @@ class WasmMonowavePlatform implements MonowavePlatform {
   );
 
   @override
+  Future<Int16List> renderPcm({
+    required String sourcePath,
+    required WaveformDocument document,
+  }) async => throw const MonowaveDecodeException(
+    DecodeFailure.unreadable,
+    'Web has no filesystem to read a source from. Web playback will decode '
+    'through the browser and apply the envelope in an AudioWorklet; see '
+    'ROADMAP.md, M10.',
+  );
+
+  @override
   Future<CaptureSession> openCapture([
     CaptureConfig config = const CaptureConfig(),
   ]) async => throw const CaptureUnavailable(

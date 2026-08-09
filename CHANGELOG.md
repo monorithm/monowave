@@ -8,6 +8,47 @@ follows [semantic versioning](https://semver.org/spec/v2.0.0.html).
 development milestones, kept here because what changed in them is still the
 history of this API.
 
+## Unreleased
+
+### Added: an edit can be rendered without writing a file
+
+`MonowavePlatform.renderPcm` returns a document as 16-bit PCM. The samples are
+byte-identical to what `exportWav` writes for the same document, and that is the
+point rather than a happy accident. Hearing an edit before committing to it is
+only useful when what you hear is what you get.
+
+Equality is structural rather than tested into place. `wf_export_wav` is now a
+file sink over a new `wf_render`, so the exporter and the renderer run one loop.
+There is no second implementation to drift.
+
+The corpus behind that claim is the set of shapes that break a naive
+extraction: a zero-length region, a negative-length region, fades longer than
+the region that holds them, a gain of exactly 1.0, a gain that clamps, a region
+running past the end of the source, and a region length that neither block size
+divides. The renderer reads in 1000-frame blocks and the exporter in 4096, and
+the output still has to match. It can only match because the fade envelope
+depends on the position inside its region rather than on where a block boundary
+falls.
+
+- `wf_envelope` is exported rather than `static`, so the curve the exporter, the
+  renderer and a future web implementation share is one symbol. It also gets the
+  property tests it never had: exactly 0 and exactly 1 at the endpoints, linear
+  in between, overlapping fades that multiply, and never a negative multiplier.
+- `FakeMonowavePlatform.renderPcm` records every request and answers with
+  silence of the right length, so a host can assert on the request without
+  synthesizing audio.
+- Not available on web, which has no filesystem to read a source from.
+
+This is M6 of the playback work. `PlaybackSession` and an audio device arrive in
+M7 and M8. See [ROADMAP.md](ROADMAP.md).
+
+### Changed
+
+- **ABI 8 → 9.** Additive: `wf_envelope`, `wf_render_open`, `wf_render_close`,
+  `wf_render_read`, `wf_render_sample_rate`, `wf_render_channels` and
+  `wf_render_length_frames`. No existing signature changed, and the determinism
+  digests do not move on either binding.
+
 ## 0.3.1
 
 A capture session that kept the microphone open after it was dropped, an

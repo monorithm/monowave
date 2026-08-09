@@ -82,6 +82,24 @@ abstract interface class MonowavePlatform {
     required WaveformDocument document,
   });
 
+  /// Renders [document] to 16-bit PCM without writing a file.
+  ///
+  /// The samples are byte-identical to what [exportWav] would write for the
+  /// same document, because both run the same C loop. That equality is the
+  /// whole point: it is what lets a preview be trusted before an edit is
+  /// committed.
+  ///
+  /// Returns interleaved frames at the source's own sample rate and channel
+  /// count. The whole render is resident, so this is for previews and tests
+  /// rather than for an audiobook - streaming playback arrives with
+  /// `PlaybackSession`. See ROADMAP.md.
+  ///
+  /// Not available on web, which has no filesystem to read.
+  Future<Int16List> renderPcm({
+    required String sourcePath,
+    required WaveformDocument document,
+  });
+
   /// Opens a microphone capture session.
   ///
   /// Does not request permission. A headless package has no UI to explain why

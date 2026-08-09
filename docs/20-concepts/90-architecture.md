@@ -175,6 +175,24 @@ monokit is the design system on the other side of that line, and it is shaped to
 What a component of that shape cannot do is min/max asymmetry and a viewport that zooms, because both need more than one number per bar.
 That is what `PeakWindow` and `WaveformViewport` are for, and the example carries a reference painter over them -- see [drawing a waveform](../10-recipes/10-draw-a-waveform.md).
 
+## Playing an edit belongs here, and nearly did not
+
+Monowave can capture, draw, edit and export a document. It cannot play one, and the gap is real: the only way to hear an edit today is `exportWav`, so a user hears a trim after committing to it rather than while dragging the handle.
+
+That work was first designed as a separate package, on the reading that "monowave never sees a player" forbids it. The reading was wrong. That rule is about *coupling* -- `WaveformTimeline` takes a sample rate and a length rather than a player instance, so monowave never depends on `just_audio` or `media_kit`. Monowave implementing its own playback takes a dependency on nobody.
+
+Three facts settled it.
+
+A separate package duplicates **123,179 lines of vendored C**. miniaudio alone is 95,864 of them, and this package already compiles it for capture. It also duplicates four platform fixes in the build hook, including the `-lm` lesson above.
+
+The correctness property is weaker outside. A renderer here shares `wf_source_*` and `wf_envelope` with `wf_export_wav`, so "the preview sounds like the export" is structural. In a sibling package it is a port that a test has to police, plus a decoder version pin across two repositories that nothing would notice going stale.
+
+Monowave already opens an audio device. `ma_device_init` runs in `wf_capture.c` today. A package that opens a microphone and not a speaker is the odd shape.
+
+**One boundary survives the move.** `MonoPlaybackController` lives in monokit, and monowave must not depend on the design system -- that inverts the layering this page spends a section defending. So monowave will own the engine and implement no monokit interface. The adapter stays the few lines a host writes, which is exactly what `DemoPlayer` already is.
+
+The design and the milestones are in [ROADMAP.md](../../ROADMAP.md).
+
 ## Editing is non-destructive, and undo is a snapshot
 
 A document is a list of regions: a range in the source, a gain, two fade lengths.

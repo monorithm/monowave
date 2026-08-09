@@ -120,6 +120,44 @@ class FakeMonowavePlatform implements MonowavePlatform {
     }
   }
 
+  /// Every render requested, as (sourcePath, document).
+  final List<(String, WaveformDocument)> renders = [];
+
+  /// What [renderPcm] returns. Defaults to silence one frame per source frame
+  /// the document describes, so a host can assert on the *length* without
+  /// having to synthesize audio.
+  Int16List? nextRender;
+
+  /// When set, the next render throws this instead.
+  Object? nextRenderError;
+
+  @override
+  Future<Int16List> renderPcm({
+    required String sourcePath,
+    required WaveformDocument document,
+  }) async {
+    renders.add((sourcePath, document));
+
+    final error = nextRenderError;
+    if (error != null) {
+      nextRenderError = null;
+      throw error;
+    }
+
+    final canned = nextRender;
+    if (canned != null) {
+      nextRender = null;
+      return canned;
+    }
+
+    var frames = 0;
+    for (final region in document.regions) {
+      final length = region.sourceEnd - region.sourceStart;
+      if (length > 0) frames += length;
+    }
+    return Int16List(frames);
+  }
+
   /// Sessions handed back by [openCapture], newest last.
   final List<FakeCaptureSession> sessions = [];
 

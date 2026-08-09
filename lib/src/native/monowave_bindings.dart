@@ -246,6 +246,54 @@ external int wfExportWav(
   int regionCount,
 );
 
+/// The linear gain multiplier for one frame of a region.
+///
+/// Shared by the exporter and the renderer, so a preview and an export apply
+/// one curve rather than two that happen to agree.
+@Native<Float Function(Int64, Int64, Int32, Int32)>(symbol: 'wf_envelope')
+external double wfEnvelope(int offset, int length, int fadeIn, int fadeOut);
+
+// --- Render -----------------------------------------------------------------
+
+/// Opaque handle to a render in progress.
+final class WfRender extends Opaque {}
+
+@Native<
+  Pointer<WfRender> Function(
+    Pointer<Utf8>,
+    Pointer<WfRegion>,
+    Int32,
+    Pointer<Int32>,
+  )
+>(symbol: 'wf_render_open')
+external Pointer<WfRender> wfRenderOpen(
+  Pointer<Utf8> sourcePath,
+  Pointer<WfRegion> regions,
+  int regionCount,
+  Pointer<Int32> outError,
+);
+
+@Native<Void Function(Pointer<WfRender>)>(symbol: 'wf_render_close')
+external void wfRenderClose(Pointer<WfRender> render);
+
+@Native<Int32 Function(Pointer<WfRender>)>(symbol: 'wf_render_sample_rate')
+external int wfRenderSampleRate(Pointer<WfRender> render);
+
+@Native<Int32 Function(Pointer<WfRender>)>(symbol: 'wf_render_channels')
+external int wfRenderChannels(Pointer<WfRender> render);
+
+@Native<Double Function(Pointer<WfRender>)>(symbol: 'wf_render_length_frames')
+external double wfRenderLengthFrames(Pointer<WfRender> render);
+
+@Native<Int32 Function(Pointer<WfRender>, Pointer<Int16>, Int32)>(
+  symbol: 'wf_render_read',
+)
+external int wfRenderRead(
+  Pointer<WfRender> render,
+  Pointer<Int16> out,
+  int maxFrames,
+);
+
 /// The address of [wfPeaksFree], for attaching to a [NativeFinalizer].
 final Pointer<NativeFinalizerFunction> wfPeaksFreeAddress =
     Native.addressOf<NativeFunction<Void Function(Pointer<WfPeaks>)>>(
