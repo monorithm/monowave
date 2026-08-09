@@ -198,23 +198,47 @@ jobs:
         working-directory: example
         run: flutter build web
 
-      # A gate since it was shown to run here: the chrome platform runner hangs
-      # with no output on at least one dev machine, which is why this was
-      # informational for its first few months. It passes on this runner, so the
-      # hang is local.
+      # A gate, and it earns that by covering the one leg the checks above
+      # cannot. The node check proves the artifact computes a value and exports
+      # it; the `_Core` extension type makes a member it does not declare a
+      # compile error. Neither can see a binding that reads a series out of the
+      # heap and then forgets to pass it on, which is half of how 0.3.0 shipped
+      # `rms` returning null on web. Only decoding through the real binding in a
+      # real browser catches that.
       #
-      # It earns the gate by covering the one leg the checks above cannot. The
-      # node check proves the artifact computes a value and exports it; the
-      # `_Core` extension type makes a member it does not declare a compile
-      # error. Neither can see a binding that reads a series and then forgets to
-      # pass it on, which is half of how 0.3.0 shipped `rms` returning null on
-      # web. Only decoding through the real binding in a real browser catches
-      # that.
+      # `flutter drive` rather than `flutter test --platform chrome`, which was
+      # what this ran for its first few months while reporting nothing. That
+      # runner serves the compiled test bundle and no assets, so
+      # `rootBundle.load` of the WASM module never completes - it does not fail,
+      # it hangs, and the suite died on the framework's twelve-minute timeout
+      # having run no test at all. `continue-on-error` then reported the job
+      # green over an exit code of 1, which is how it stayed invisible. The hang
+      # was never local and never flaky. `flutter drive` builds and serves the
+      # example itself, assets included.
       #
-      # The timeout is because of the hang above. Left to itself a wedged
-      # browser runner would sit here until the job's 6-hour ceiling, blocking
-      # the PR and burning the runner; the whole job takes about 15 minutes.
-      - name: Run the WASM binding in a browser
+      # The timeout is a backstop, not a fix: a wedged browser would otherwise
+      # sit here until the job's 6-hour ceiling.
+      - uses: nanasess/setup-chromedriver@v2
+      - name: Run the WASM binding in a real browser
         timeout-minutes: 10
         working-directory: example
-        run: flutter test --platform chrome test/web_wasm_test.dart
+        run: |
+          chromedriver --version
+          chromedriver --port=4444 &
+
+          # Poll rather than sleep. Racing chromedriver's startup makes
+          # `flutter drive` fail with a connection error that looks nothing
+          # like the cause, which is a bad half-hour for whoever hits it.
+          for _ in $(seq 1 30); do
+            curl -sf http://localhost:4444/status >/dev/null && break
+            sleep 1
+          done
+          curl -sf http://localhost:4444/status >/dev/null \
+            || { echo "::error::chromedriver never came up on 4444"; exit 1; }
+
+          flutter drive \
+            --driver=test_driver/integration_test.dart \
+            --target=integration_test/wasm_parity_test.dart \
+            -d web-server \
+            --browser-name=chrome \
+            --headless
