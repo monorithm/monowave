@@ -154,6 +154,13 @@ class FakeMonowavePlatform implements MonowavePlatform {
 /// widget test. Frames arrive when a test calls [emit] or [emitTone] rather
 /// than when an audio thread produces them, which makes the timing exact
 /// instead of merely likely.
+///
+/// [dispose] follows the real session in what it leaves readable: [produced],
+/// [dropped], [pcmDropped] and [truncated] keep answering afterwards rather
+/// than throwing, so a UI that reads a counter while tearing down behaves the
+/// same here as it does against a microphone. The real session freezes its
+/// counters at dispose to manage it, because the C struct they came from is
+/// gone by then.
 class FakeCaptureSession implements CaptureSession {
   FakeCaptureSession({this.config = const CaptureConfig()})
     : scope = CaptureScope(capacity: config.scopeCapacity);
@@ -277,6 +284,7 @@ class FakeCaptureSession implements CaptureSession {
     if (_disposed) return;
     _disposed = true;
     _recording = false;
+    _paused = false;
     await _frames.close();
   }
 }

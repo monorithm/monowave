@@ -45,4 +45,23 @@ void main() {
     FakeMonowavePlatform.uninstall();
     expect(MonowavePlatform.instance.abiVersion(), 8);
   });
+
+  test('a disposed fake session still answers its counters', () async {
+    // Parity with FfiCaptureSession, which freezes its counters at dispose
+    // rather than throwing. A host whose visualizer reads one while tearing
+    // down must not pass here and then fail against a real microphone.
+    final session = FakeCaptureSession()..emitTone(3);
+    session.dropFrames(2);
+    await session.start();
+    await session.pause();
+
+    await session.dispose();
+
+    expect(session.produced, 3);
+    expect(session.dropped, 2);
+    expect(session.pcmDropped, 0);
+    expect(session.truncated, isFalse);
+    expect(session.isRecording, isFalse);
+    expect(session.isPaused, isFalse);
+  });
 }
