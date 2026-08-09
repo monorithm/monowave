@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/scheduler.dart' show Ticker;
-import 'package:monokit/monokit.dart';
+import 'package:monokit_ui/monokit_ui.dart';
 import 'package:monowave/monowave.dart';
 import 'package:permission_handler/permission_handler.dart';
 

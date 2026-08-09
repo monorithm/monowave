@@ -9,7 +9,7 @@ library;
 
 import 'dart:math' as math;
 
-import 'package:monokit/monokit.dart';
+import 'package:monokit_ui/monokit_ui.dart';
 
 enum WaveGlyph { undo, redo }
 

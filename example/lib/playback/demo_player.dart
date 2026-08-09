@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart' show ValueListenable;
-import 'package:monokit/monokit.dart';
+import 'package:monokit_ui/monokit_ui.dart';
 
 /// A [MonoPlaybackController] that advances a clock instead of playing audio.
 ///
