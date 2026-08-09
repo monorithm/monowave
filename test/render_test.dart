@@ -250,6 +250,114 @@ void main() {
     });
   });
 
+  group('rendering from bytes', () {
+    // The web render path, exercised natively. Web has no filesystem, so it
+    // reaches wf_render_open_memory instead of wf_render_open - but it is the
+    // same loop over the same decoders, and that is the whole point. If these
+    // two ever disagree, web has quietly become a second implementation.
+    test('matches rendering from a path, byte for byte', () async {
+      const document = WaveformDocument([
+        WaveformRegion(sourceStart: 0, sourceEnd: 9000, fadeIn: 400),
+        WaveformRegion(sourceStart: 20000, sourceEnd: 26000, gain: 0.35),
+      ]);
+
+      final fromPath = await platform.renderPcm(
+        sourcePath: monoPath,
+        document: document,
+      );
+      final fromBytes = await platform.renderPcmBytes(
+        bytes: File(monoPath).readAsBytesSync(),
+        document: document,
+      );
+
+      expect(fromBytes, orderedEquals(fromPath));
+    });
+
+    test('matches an export, which is the claim that matters', () async {
+      const document = WaveformDocument([
+        WaveformRegion(
+          sourceStart: 0,
+          sourceEnd: 4097,
+          gain: 0.5,
+          fadeOut: 900,
+        ),
+      ]);
+      final outputPath = '${workspace.path}/out.wav';
+
+      final rendered = await platform.renderPcmBytes(
+        bytes: File(monoPath).readAsBytesSync(),
+        document: document,
+      );
+      await platform.exportWav(
+        sourcePath: monoPath,
+        outputPath: outputPath,
+        document: document,
+      );
+
+      expect(rendered, orderedEquals(_pcmOf(outputPath)));
+    });
+
+    test('handles a stereo source', () async {
+      const document = WaveformDocument([
+        WaveformRegion(sourceStart: 100, sourceEnd: 5000, gain: 0.8),
+      ]);
+
+      expect(
+        await platform.renderPcmBytes(
+          bytes: File(stereoPath).readAsBytesSync(),
+          document: document,
+        ),
+        orderedEquals(
+          await platform.renderPcm(sourcePath: stereoPath, document: document),
+        ),
+      );
+    });
+
+    test('refuses an empty document', () async {
+      await expectLater(
+        platform.renderPcmBytes(
+          bytes: File(monoPath).readAsBytesSync(),
+          document: const WaveformDocument([]),
+        ),
+        throwsA(isA<MonowaveDecodeException>()),
+      );
+    });
+
+    test('reports bytes it cannot decode', () async {
+      await expectLater(
+        platform.renderPcmBytes(
+          bytes: Uint8List.fromList(List.filled(64, 0)),
+          document: const WaveformDocument([
+            WaveformRegion(sourceStart: 0, sourceEnd: 100),
+          ]),
+        ),
+        throwsA(isA<MonowaveDecodeException>()),
+      );
+    });
+
+    test('does not hold the caller\'s buffer', () async {
+      // dr_libs reference the buffer they are given rather than copying it, and
+      // a render outlives the call. The C side copies; this is what says so.
+      final bytes = File(monoPath).readAsBytesSync();
+      const document = WaveformDocument([
+        WaveformRegion(sourceStart: 0, sourceEnd: 3000),
+      ]);
+
+      final expected = await platform.renderPcmBytes(
+        bytes: bytes,
+        document: document,
+      );
+
+      bytes.fillRange(0, bytes.length, 0); // scribble over the input
+      final again = await platform.renderPcmBytes(
+        bytes: File(monoPath).readAsBytesSync(),
+        document: document,
+      );
+
+      expect(again, orderedEquals(expected));
+    });
+  });
+
   group('the envelope', () {
     // `wf_envelope` was `static` until M6 and therefore never tested directly.
     // These are the properties the architecture doc claims for that curve, and

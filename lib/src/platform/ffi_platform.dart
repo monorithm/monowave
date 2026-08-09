@@ -169,6 +169,32 @@ class FfiMonowavePlatform implements MonowavePlatform {
   }
 
   @override
+  Future<Int16List> renderPcmBytes({
+    required Uint8List bytes,
+    required WaveformDocument document,
+  }) async {
+    if (document.isEmpty) {
+      throw const MonowaveDecodeException(
+        DecodeFailure.empty,
+        'There is nothing to render: the document has no regions.',
+      );
+    }
+
+    final regions = [
+      for (final region in document.regions)
+        (
+          region.sourceStart,
+          region.sourceEnd,
+          region.gain,
+          region.fadeIn,
+          region.fadeOut,
+        ),
+    ];
+
+    return Isolate.run(() => _renderBytesToPcm(bytes, regions));
+  }
+
+  @override
   Future<PlaybackSession> openPlayback({
     required String sourcePath,
     required WaveformDocument document,
@@ -351,6 +377,74 @@ Int16List _renderToPcm(
     if (block != nullptr) calloc.free(block);
     calloc
       ..free(path)
+      ..free(buffer)
+      ..free(error);
+  }
+}
+
+/// Runs in a helper isolate. The memory twin of [_renderToPcm].
+Int16List _renderBytesToPcm(
+  Uint8List bytes,
+  List<(int, int, double, int, int)> regions,
+) {
+  const blockFrames = 1000;
+
+  final input = calloc<Uint8>(bytes.length);
+  final buffer = calloc<bindings.WfRegion>(regions.length);
+  final error = calloc<Int32>();
+  Pointer<bindings.WfRender> render = nullptr;
+  Pointer<Int16> block = nullptr;
+
+  try {
+    input.asTypedList(bytes.length).setAll(0, bytes);
+    for (var i = 0; i < regions.length; i++) {
+      final (start, end, gain, fadeIn, fadeOut) = regions[i];
+      buffer[i]
+        ..sourceStart = start.toDouble()
+        ..sourceEnd = end.toDouble()
+        ..gain = gain
+        ..fadeIn = fadeIn
+        ..fadeOut = fadeOut;
+    }
+
+    render = bindings.wfRenderOpenMemory(
+      input.cast(),
+      bytes.length,
+      buffer,
+      regions.length,
+      error,
+    );
+    if (render == nullptr) {
+      throw _failure(error.value, '${bytes.length} bytes');
+    }
+
+    final channels = bindings.wfRenderChannels(render);
+    final total = bindings.wfRenderLengthFrames(render).toInt() * channels;
+    final out = Int16List(total);
+
+    block = calloc<Int16>(blockFrames * channels);
+    var written = 0;
+    while (written < total) {
+      final got = bindings.wfRenderRead(render, block, blockFrames);
+      if (got < 0) {
+        throw const MonowaveDecodeException(
+          DecodeFailure.corrupt,
+          'The source could not be read all the way through.',
+        );
+      }
+      if (got == 0) break;
+
+      final samples = got * channels;
+      out.setRange(written, written + samples, block.asTypedList(samples));
+      written += samples;
+    }
+
+    return written == total ? out : Int16List.sublistView(out, 0, written);
+  } finally {
+    if (render != nullptr) bindings.wfRenderClose(render);
+    if (block != nullptr) calloc.free(block);
+    calloc
+      ..free(input)
       ..free(buffer)
       ..free(error);
   }

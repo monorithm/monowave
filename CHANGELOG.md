@@ -138,8 +138,42 @@ handshake from M8 unchanged.
 
 This is M9. Web playback is M10; see [ROADMAP.md](ROADMAP.md).
 
+### Added: web renders through the same C loop, byte for byte
+
+`MonowavePlatform.renderPcmBytes` renders a document from bytes already in
+memory. It is the render path on every target, and the only one on web, which
+has no filesystem.
+
+**The roadmap expected this to cost the equality guarantee. It did not.** The
+plan was to decode through the browser and apply the envelope in an
+AudioWorklet, which would have left MP3 approximate on web, since Chrome's
+decoder is not `dr_mp3`. That concession is withdrawn. `DR_WAV_NO_STDIO` and its
+siblings remove only the *file* entry points, so the WASM build already carried
+all three decoders with their memory APIs - `wf_decode_memory` has always used
+them. Web now runs the same render loop as the exporter, over the same decoders.
+
+A rendered document is byte-identical on all six targets, for every format.
+
+`tool/verify_wasm.mjs` asserts it. It renders a document through the WASM module
+and compares every sample against a native render. Changing the int16
+conversion from truncation to rounding fails that check at sample 1.
+
+- Only `wf_source_open` and `wf_export_wav` sit behind the stdio guard now. The
+  source layer, the region walk, the envelope and the render loop are shared.
+- `wf_region_stride` is exported, so a binding that lays the array out by hand -
+  the web one writes into the WASM heap - asks rather than guesses.
+- The bytes are copied into the render. dr_libs reference a caller's buffer
+  rather than copying it, and a render outlives the call that made it.
+
+Still missing on web: an audio device. `openPlayback` throws there. The hard
+half is done, since web can produce exactly the right samples, and what remains
+is a WebAudio graph to play them, which needs no C.
+
+This is M10. See [ROADMAP.md](ROADMAP.md).
+
 ### Changed
 
+- **ABI 12 → 13.** Additive: `wf_render_open_memory` and `wf_region_stride`.
 - **ABI 11 → 12.** Additive: `wf_render_set_regions` and
   `wf_playback_set_regions`.
 - **ABI 10 → 11.** Additive: `wf_render_seek` and `wf_playback_seek`.

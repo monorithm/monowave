@@ -283,34 +283,56 @@ handshake unchanged. That is also why `wf_playback_seek` and
 
 ---
 
-## M10 - Web playback
+## M10 - Web renders through the same C loop: done
 
-A WebAudio graph, not a second WASM entry point.
+A WebAudio graph was the plan. It is not what web turned out to need.
 
-Decoding to peaks is a pure function, so web runs the same C. Playback is a
-device concern, and the browser already provides the graph. This is the same
-call M5 already made for web capture, for the same reason: the miniaudio web
-backend needs the emscripten JavaScript runtime, and `assets/monowave.wasm` is
-`-sSTANDALONE_WASM --no-entry` with no JS glue at all.
+- `wf_render_open_memory` renders from bytes rather than from a path.
+- `MonowavePlatform.renderPcmBytes` is the render path on every target, and the
+  only one on web.
+- The WASM build exports the renderer, so web runs the same loop as the
+  exporter.
 
-- Decode through the browser and apply the envelope in an AudioWorklet.
-- Reimplement the region walk once, in Dart or in JavaScript, against the six
-  details above.
+Status: 6 more tests in `test/render_test.dart`, three in the browser parity
+test, and a render check in `tool/verify_wasm.mjs`. The full suite is at 207.
 
-**Exit criterion.** The browser test decodes a WAV document through the web
-binding and asserts a byte-for-byte match against the native render. **MP3 is
-asserted for shape rather than for equality.**
+**Exit criterion.** Assert a byte-for-byte match between the web render and the
+native one. MP3 was to be asserted for shape rather than equality.
 
-That asymmetry is a real hole. The browser MP3 decoder is not `dr_mp3`, and the
-last bit of a floating-point decode legitimately differs between
-implementations. For WAV there is no decoder to disagree about, so the guarantee
-survives there. It is written down so that it stays a known limit rather than a
-later discovery.
+### The premise was wrong, and the guarantee is better for it
 
-The browser test is a gate rather than an informational step, so this milestone
-inherits a check that can fail the build.
+This page said web must decode through the browser and apply the envelope in an
+AudioWorklet, and that MP3 could therefore only be approximate on web, because
+Chrome's decoder is not `dr_mp3`. That hole went into the architecture doc as a
+cost to accept.
 
----
+It was not real. `DR_WAV_NO_STDIO` and its siblings remove only the *file* entry
+points. The WASM build already carried all three decoders with their memory
+APIs, because `wf_decode_memory` has always used them. Nothing needed decoding
+through the browser, and no second implementation of the render was needed.
+
+So the split moved. Only `wf_source_open` and `wf_export_wav` sit behind the
+stdio guard now. The source layer, the region walk, the envelope and the render
+loop are shared, and web reaches them through `wf_render_open_memory`.
+
+**A rendered document is byte-identical on all six targets, for every format.**
+The equality claim has no exception, and the concession is withdrawn rather than
+lived with. `tool/verify_wasm.mjs` renders through the WASM module and compares
+every sample against a native render; changing the int16 conversion from
+truncation to rounding fails it at sample 1.
+
+### What is still missing: an audio device on web
+
+There is no `PlaybackSession` on web. `openPlayback` still throws there.
+
+That is a smaller job than it was, because the hard half is done - web can
+produce exactly the right samples. What remains is an output device for them: a
+WebAudio graph over an `AudioBuffer`, or a worklet pulling from the WASM heap
+for longer documents. It needs no C, and nothing about it can change what the
+samples are.
+
+The M7 to M9 transport - the ring, the feeder thread, the seek handshake - is
+native-only by design and does not port. A browser has its own scheduler.
 
 ## What playback will not do
 

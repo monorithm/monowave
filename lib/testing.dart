@@ -158,6 +158,18 @@ class FakeMonowavePlatform implements MonowavePlatform {
     return Int16List(frames);
   }
 
+  /// Every byte-render requested, as (byteLength, document).
+  final List<(int, WaveformDocument)> byteRenders = [];
+
+  @override
+  Future<Int16List> renderPcmBytes({
+    required Uint8List bytes,
+    required WaveformDocument document,
+  }) async {
+    byteRenders.add((bytes.length, document));
+    return renderPcm(sourcePath: '${bytes.length} bytes', document: document);
+  }
+
   /// Sessions handed back by [openCapture], newest last.
   final List<FakeCaptureSession> sessions = [];
 

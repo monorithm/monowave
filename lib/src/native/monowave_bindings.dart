@@ -285,6 +285,23 @@ external int wfRenderChannels(Pointer<WfRender> render);
 @Native<Double Function(Pointer<WfRender>)>(symbol: 'wf_render_length_frames')
 external double wfRenderLengthFrames(Pointer<WfRender> render);
 
+@Native<
+  Pointer<WfRender> Function(
+    Pointer<Void>,
+    Size,
+    Pointer<WfRegion>,
+    Int32,
+    Pointer<Int32>,
+  )
+>(symbol: 'wf_render_open_memory')
+external Pointer<WfRender> wfRenderOpenMemory(
+  Pointer<Void> data,
+  int size,
+  Pointer<WfRegion> regions,
+  int regionCount,
+  Pointer<Int32> outError,
+);
+
 @Native<Int32 Function(Pointer<WfRender>, Double)>(symbol: 'wf_render_seek')
 external int wfRenderSeek(Pointer<WfRender> render, double outputFrame);
 

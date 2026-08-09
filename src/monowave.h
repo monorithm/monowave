@@ -22,7 +22,7 @@ extern "C" {
 #endif
 
 // Bumped whenever a signature below changes. Dart asserts on it at startup.
-#define WF_ABI_VERSION 12
+#define WF_ABI_VERSION 13
 
 // Cap on pyramid depth. 24 levels at a 128-sample base covers a bit over a
 // billion samples per pair - far past any real recording.
@@ -253,6 +253,29 @@ typedef struct wf_render wf_render;
 WF_EXPORT wf_render *wf_render_open(const char *src_path,
                                     const wf_region *regions,
                                     int32_t region_count, int32_t *out_error);
+
+/// `sizeof(wf_region)`, including any tail padding.
+///
+/// A binding that lays the array out by hand - the web one has to, since it
+/// writes into the WASM heap - should ask rather than guess. The field offsets
+/// follow from declaration order and natural alignment; only the stride is
+/// non-obvious.
+WF_EXPORT int32_t wf_region_stride(void);
+
+/// The same render, over bytes already in memory.
+///
+/// This is how web renders. The WASM build has no filesystem, but it does carry
+/// the same dr_libs decoders - `wf_decode_memory` already runs them - so web
+/// goes through this loop rather than through a second implementation of it.
+/// That is what keeps a rendered document byte-identical on all six targets
+/// instead of on five.
+///
+/// The bytes are copied. dr_libs reference a caller's buffer rather than
+/// copying it, and a render outlives this call.
+WF_EXPORT wf_render *wf_render_open_memory(const void *data, size_t size,
+                                           const wf_region *regions,
+                                           int32_t region_count,
+                                           int32_t *out_error);
 WF_EXPORT void wf_render_close(wf_render *render);
 
 WF_EXPORT int32_t wf_render_sample_rate(const wf_render *render);
