@@ -139,6 +139,34 @@ class FfiMonowavePlatform implements MonowavePlatform {
   }
 
   @override
+  Future<Int16List> renderPcm({
+    required String sourcePath,
+    required WaveformDocument document,
+  }) async {
+    if (document.isEmpty) {
+      throw const MonowaveDecodeException(
+        DecodeFailure.empty,
+        'There is nothing to render: the document has no regions.',
+      );
+    }
+
+    final regions = [
+      for (final region in document.regions)
+        (
+          region.sourceStart,
+          region.sourceEnd,
+          region.gain,
+          region.fadeIn,
+          region.fadeOut,
+        ),
+    ];
+
+    // Off the UI isolate, like decoding and exporting: rendering reads the
+    // source through the same decoders and is seconds of work for a long take.
+    return Isolate.run(() => _renderToPcm(sourcePath, regions));
+  }
+
+  @override
   Future<CaptureSession> openCapture([
     CaptureConfig config = const CaptureConfig(),
   ]) => FfiCaptureSession.open(config);
@@ -251,6 +279,72 @@ int _exportToPath(
       ..free(source)
       ..free(output)
       ..free(buffer);
+  }
+}
+
+/// Runs in a helper isolate. Returns interleaved 16-bit PCM, or throws.
+///
+/// The block size is deliberately not the exporter's 4096. The two have to
+/// agree sample for sample, and they only can because the envelope depends on
+/// the position inside a region rather than on where a block happens to fall -
+/// so rendering at a different size is the cheapest way to keep proving it.
+Int16List _renderToPcm(
+  String sourcePath,
+  List<(int, int, double, int, int)> regions,
+) {
+  const blockFrames = 1000;
+
+  final path = sourcePath.toNativeUtf8();
+  final buffer = calloc<bindings.WfRegion>(regions.length);
+  final error = calloc<Int32>();
+  Pointer<bindings.WfRender> render = nullptr;
+  Pointer<Int16> block = nullptr;
+
+  try {
+    for (var i = 0; i < regions.length; i++) {
+      final (start, end, gain, fadeIn, fadeOut) = regions[i];
+      buffer[i]
+        ..sourceStart = start.toDouble()
+        ..sourceEnd = end.toDouble()
+        ..gain = gain
+        ..fadeIn = fadeIn
+        ..fadeOut = fadeOut;
+    }
+
+    render = bindings.wfRenderOpen(path.cast(), buffer, regions.length, error);
+    if (render == nullptr) throw _failure(error.value, sourcePath);
+
+    final channels = bindings.wfRenderChannels(render);
+    final total = bindings.wfRenderLengthFrames(render).toInt() * channels;
+    final out = Int16List(total);
+
+    block = calloc<Int16>(blockFrames * channels);
+    var written = 0;
+    while (written < total) {
+      final got = bindings.wfRenderRead(render, block, blockFrames);
+      if (got < 0) {
+        throw const MonowaveDecodeException(
+          DecodeFailure.corrupt,
+          'The source could not be read all the way through.',
+        );
+      }
+      if (got == 0) break;
+
+      final samples = got * channels;
+      out.setRange(written, written + samples, block.asTypedList(samples));
+      written += samples;
+    }
+
+    // A source that ends early is not an error, so the render can be shorter
+    // than the region list asked for. Hand back what exists.
+    return written == total ? out : Int16List.sublistView(out, 0, written);
+  } finally {
+    if (render != nullptr) bindings.wfRenderClose(render);
+    if (block != nullptr) calloc.free(block);
+    calloc
+      ..free(path)
+      ..free(buffer)
+      ..free(error);
   }
 }
 

@@ -69,3 +69,7 @@ bun.lock
 # `docs-sync.yml`, the README's links and the docs site's own paths along with
 # it, to put files in the archive nobody reads from there.
 /docs/
+
+# The roadmap is a working document for this repo. A consumer reading it out of
+# a pub cache gains nothing, and it goes for the same reason /docs/ does.
+/ROADMAP.md

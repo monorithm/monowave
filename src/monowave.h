@@ -22,7 +22,7 @@ extern "C" {
 #endif
 
 // Bumped whenever a signature below changes. Dart asserts on it at startup.
-#define WF_ABI_VERSION 8
+#define WF_ABI_VERSION 9
 
 // Cap on pyramid depth. 24 levels at a 128-sample base covers a bit over a
 // billion samples per pair - far past any real recording.
@@ -222,6 +222,57 @@ typedef struct {
 /// round-trip that is meant to be exact.
 WF_EXPORT int32_t wf_export_wav(const char *src_path, const char *out_path,
                                 const wf_region *regions, int32_t region_count);
+
+/// The linear gain multiplier for one frame of a region.
+///
+/// `offset` is the position inside the region and `length` is the whole region
+/// length, both in frames. The result is in [0, 1].
+///
+/// Linear rather than equal-power: a fade here takes the click off an edit
+/// point rather than crossfading two takes, and linear is what puts the
+/// endpoints on exactly 0 and exactly 1. Overlapping fades multiply, so a
+/// region shorter than its two fades combined still reaches silence at both
+/// ends.
+///
+/// Exported rather than internal because the exporter, the renderer and any
+/// later web implementation must apply the same curve. One shared symbol is
+/// what stops that from being a matter of discipline.
+WF_EXPORT float wf_envelope(int64_t offset, int64_t length, int32_t fade_in,
+                            int32_t fade_out);
+
+/// A render in progress over a source and a region list.
+typedef struct wf_render wf_render;
+
+/// Opens a render of `regions` over the audio at `src_path`.
+///
+/// This is the path `wf_export_wav` takes with the file sink removed, so a
+/// caller that wants samples gets exactly the bytes an export would write.
+/// That equality is the point: it is what lets a preview be trusted.
+///
+/// Not available without stdio (the WASM build), where it reports WF_ERR_OPEN.
+WF_EXPORT wf_render *wf_render_open(const char *src_path,
+                                    const wf_region *regions,
+                                    int32_t region_count, int32_t *out_error);
+WF_EXPORT void wf_render_close(wf_render *render);
+
+WF_EXPORT int32_t wf_render_sample_rate(const wf_render *render);
+WF_EXPORT int32_t wf_render_channels(const wf_render *render);
+
+/// Frames the whole region list produces. A double rather than an int64, for
+/// the same reason wf_peaks_length returns one.
+WF_EXPORT double wf_render_length_frames(const wf_render *render);
+
+/// Pulls up to `max_frames` interleaved frames into `out`.
+///
+/// Returns the frames written, 0 past the last region, or a negative value if
+/// the source could not be read. `out` must hold `max_frames * channels`
+/// samples.
+///
+/// The block size does not change a single output sample. The envelope is a
+/// pure function of the position inside its region, which is what lets a
+/// 4096-frame exporter and a device-sized player agree byte for byte.
+WF_EXPORT int32_t wf_render_read(wf_render *render, int16_t *out,
+                                 int32_t max_frames);
 
 // --- Internal, shared between translation units -----------------------------
 
