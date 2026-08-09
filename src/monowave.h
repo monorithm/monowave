@@ -22,7 +22,7 @@ extern "C" {
 #endif
 
 // Bumped whenever a signature below changes. Dart asserts on it at startup.
-#define WF_ABI_VERSION 9
+#define WF_ABI_VERSION 10
 
 // Cap on pyramid depth. 24 levels at a 128-sample base covers a bit over a
 // billion samples per pair - far past any real recording.
@@ -273,6 +273,74 @@ WF_EXPORT double wf_render_length_frames(const wf_render *render);
 /// 4096-frame exporter and a device-sized player agree byte for byte.
 WF_EXPORT int32_t wf_render_read(wf_render *render, int16_t *out,
                                  int32_t max_frames);
+
+// --- Playback ---------------------------------------------------------------
+
+/// A render being fed through a lock-free ring to an audio device.
+typedef struct wf_playback wf_playback;
+
+/// Opens a playback of `regions` over `src_path` and starts the feeder.
+///
+/// `ring_frames` is the cushion between the feeder and the device, rounded up
+/// to a power of two. Seconds rather than milliseconds: the feeder only has to
+/// keep up on average, and a deep ring is what absorbs a slow disk.
+///
+/// The feeder runs from here rather than from `wf_playback_start`, so the ring
+/// is warm before a device opens onto it. Starting a device onto an empty ring
+/// is an underrun by construction.
+WF_EXPORT wf_playback *wf_playback_create(const char *src_path,
+                                          const wf_region *regions,
+                                          int32_t region_count,
+                                          int32_t ring_frames,
+                                          int32_t *out_error);
+WF_EXPORT void wf_playback_destroy(wf_playback *playback);
+
+/// Moves up to `frames` interleaved frames out of the ring into `out`.
+///
+/// This is the audio-thread entry point, and the device callback is a one-line
+/// wrapper around it. Exposing it directly is what makes the realtime path
+/// testable with no device attached, exactly as `wf_capture_feed` does for
+/// capture - and it is the same code a real speaker drives.
+///
+/// `out` always comes back fully written: any shortfall is silence. The return
+/// value is the frames that were real audio. Must not allocate, lock, or call
+/// into Dart, and nothing it calls does.
+WF_EXPORT int32_t wf_playback_pull(wf_playback *playback, int16_t *out,
+                                   int32_t frames);
+
+/// Frames the ring is holding, ready to be pulled.
+WF_EXPORT int32_t wf_playback_available(const wf_playback *playback);
+
+/// Whether the feeder reached the end of the render. The ring can still hold
+/// frames, so this leads `wf_playback_finished` by the depth of the cushion.
+///
+/// A consumer waiting for a full block needs this to know the difference
+/// between "the feeder is behind" and "there is no more audio".
+WF_EXPORT int32_t wf_playback_drained(const wf_playback *playback);
+
+/// Whether the render ended and the ring has been emptied.
+WF_EXPORT int32_t wf_playback_finished(const wf_playback *playback);
+
+/// Whether the feeder hit a read error rather than the end of the render.
+WF_EXPORT int32_t wf_playback_failed(const wf_playback *playback);
+
+/// Frames handed to the consumer, and frames of silence the ring could not
+/// cover. Doubles rather than int64 for the reason wf_peaks_length gives.
+///
+/// A non-zero underrun count is the first thing to look at when playback
+/// stutters, the same way `wf_capture_dropped` is for a stuttering visualizer.
+/// Silence past the end of the render is the end, not an underrun.
+WF_EXPORT double wf_playback_consumed(const wf_playback *playback);
+WF_EXPORT double wf_playback_underruns(const wf_playback *playback);
+
+WF_EXPORT int32_t wf_playback_sample_rate(const wf_playback *playback);
+WF_EXPORT int32_t wf_playback_channels(const wf_playback *playback);
+WF_EXPORT double wf_playback_length_frames(const wf_playback *playback);
+
+/// Opens an output device and starts pulling. WF_ERR_DEVICE when there is no
+/// device, which is the normal answer in CI.
+WF_EXPORT int32_t wf_playback_start(wf_playback *playback);
+WF_EXPORT int32_t wf_playback_stop(wf_playback *playback);
 
 // --- Internal, shared between translation units -----------------------------
 

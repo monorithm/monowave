@@ -99,22 +99,52 @@ M10, must reproduce all six.
 
 ---
 
-## M7 - Sound
+## M7 - Sound: done
 
 The device layer, and nothing about correctness.
 
-- Open a miniaudio playback device. The library is already vendored and already
-  compiled for capture.
-- Add a lock-free SPSC ring of int16 frames, mirroring the capture ring.
-- Run the feeder on a C thread, filling ahead of the playhead.
-- Add an underrun counter, surfaced in the same way as `CaptureSession.dropped`.
+- `wf_playback` opens a miniaudio playback device. The library was already
+  vendored and already compiled for capture.
+- A lock-free SPSC ring of int16 samples, mirroring the capture PCM ring.
+- The feeder runs on a C thread, filling ahead of the playhead.
+- An underrun counter, surfaced the way `CaptureSession.dropped` is.
 
-**Exit criterion.** Play a 30-second document through the miniaudio null
-backend, which runs headless in CI. Assert that the frames the device consumed
-match the frames M6 renders offline. Assert that the underrun count is zero.
+**Exit criterion.** Drive a 30-second document through the ring and assert the
+frames the consumer received match the frames M6 renders offline. Assert the
+underrun count is zero.
 
-A real speaker in CI proves nothing and is not available anyway. The null
-backend is what makes this testable.
+Status: 6 tests in `test/playback_test.dart`, and the full suite is at 176.
+
+**The exit criterion changed shape, and the reason is worth recording.** It said
+"play through the miniaudio null backend, which runs headless in CI". The null
+backend does run headless, but it also paces itself against a simulated clock,
+so a 30-second document costs 30 seconds of CI wall time.
+
+`wf_playback_pull` is public instead, and a test drives it directly. That is the
+same decision `wf_capture_feed` already embodies: the audio-thread entry point
+is exported so the realtime path is testable on every platform with no device
+attached, and it is the same code a real speaker drives. The consumer in the
+test waits for a full block before taking one, exactly as a well-provisioned
+device does, which is what keeps the underrun assertion meaningful rather than
+tautological. The device path itself gets a smoke test: it either opens or
+returns `WF_ERR_DEVICE`, and what it must not do is block.
+
+### The one piece of per-platform code in the package
+
+miniaudio has a thread abstraction and keeps it private: `ma_thread_create` is
+`static`, while only the mutex, event and semaphore primitives carry `MA_API`.
+Rather than vendor a second threading library for three functions,
+`wf_playback.c` carries a thread, a join and a sleep behind `#if defined(_WIN32)`.
+
+That is a real departure for a package with no per-platform code anywhere else,
+so it is written down rather than left to be discovered. The alternative was a
+feeder driven from Dart, which the architecture doc rules out: one garbage
+collection becomes an audible dropout.
+
+The feeder polls rather than waiting on an event. It wakes every 2 ms, tops up
+the ring, and sleeps again. With a ring measured in seconds it only has to keep
+up on average, so a condition variable would buy nothing and cost another two
+platform paths.
 
 ### Transport and threading
 
