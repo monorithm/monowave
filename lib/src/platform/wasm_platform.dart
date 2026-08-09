@@ -96,6 +96,32 @@ extension type _Core._(JSObject _o) implements JSObject {
   @JS('wf_peaks_free')
   external void peaksFree(int peaks);
 
+  // The renderer, reached exactly as the native binding reaches it. Web has no
+  // filesystem, so only the memory entry point ships.
+  @JS('wf_region_stride')
+  external int regionStride();
+
+  @JS('wf_render_open_memory')
+  external int renderOpenMemory(
+    int data,
+    int size,
+    int regions,
+    int regionCount,
+    int outError,
+  );
+
+  @JS('wf_render_close')
+  external void renderClose(int render);
+
+  @JS('wf_render_read')
+  external int renderRead(int render, int out, int maxFrames);
+
+  @JS('wf_render_length_frames')
+  external double renderLengthFrames(int render);
+
+  @JS('wf_render_channels')
+  external int renderChannels(int render);
+
   external int malloc(int bytes);
   external void free(int ptr);
   external _Memory get memory;
@@ -264,6 +290,112 @@ class WasmMonowavePlatform implements MonowavePlatform {
     'through the browser and apply the envelope in an AudioWorklet; see '
     'ROADMAP.md, M10.',
   );
+
+  @override
+  Future<Int16List> renderPcmBytes({
+    required Uint8List bytes,
+    required WaveformDocument document,
+  }) async {
+    if (document.isEmpty) {
+      throw const MonowaveDecodeException(
+        DecodeFailure.empty,
+        'There is nothing to render: the document has no regions.',
+      );
+    }
+
+    // The same loop the exporter runs, over the same decoders, reached through
+    // WASM instead of `dart:ffi`. Web is not a second implementation of the
+    // render - that is what keeps a rendered document byte-identical here.
+    const blockFrames = 1000;
+    final core = _core;
+
+    final stride = core.regionStride();
+    final input = core.malloc(bytes.length);
+    final regions = core.malloc(stride * document.regions.length);
+    final error = core.malloc(4);
+    if (input == 0 || regions == 0 || error == 0) {
+      throw const MonowaveDecodeException(
+        DecodeFailure.internal,
+        'The WASM heap could not grow to hold the input.',
+      );
+    }
+
+    var render = 0;
+    var block = 0;
+    try {
+      // Every write re-reads the heap: an allocation anywhere in the module can
+      // move it, and a stale view is silently wrong rather than loudly so.
+      _heapOf(core).asUint8List(input, bytes.length).setAll(0, bytes);
+
+      for (var i = 0; i < document.regions.length; i++) {
+        final region = document.regions[i];
+        final at = regions + i * stride;
+        final view = ByteData.sublistView(
+          _heapOf(core).asUint8List(at, stride),
+        );
+        // Field offsets follow from the declaration order in `wf_region` and
+        // natural alignment. Only the stride is non-obvious, and C reports it.
+        view
+          ..setFloat64(0, region.sourceStart.toDouble(), Endian.little)
+          ..setFloat64(8, region.sourceEnd.toDouble(), Endian.little)
+          ..setFloat32(16, region.gain, Endian.little)
+          ..setInt32(20, region.fadeIn, Endian.little)
+          ..setInt32(24, region.fadeOut, Endian.little);
+      }
+
+      render = core.renderOpenMemory(
+        input,
+        bytes.length,
+        regions,
+        document.regions.length,
+        error,
+      );
+      if (render == 0) {
+        throw _failure(_heapOf(core).asInt32List(error, 1).first, bytes.length);
+      }
+
+      final channels = core.renderChannels(render);
+      final total = core.renderLengthFrames(render).toInt() * channels;
+      final out = Int16List(total);
+
+      block = core.malloc(blockFrames * channels * 2);
+      if (block == 0) {
+        throw const MonowaveDecodeException(
+          DecodeFailure.internal,
+          'The WASM heap could not grow to hold a render block.',
+        );
+      }
+
+      var written = 0;
+      while (written < total) {
+        final got = core.renderRead(render, block, blockFrames);
+        if (got < 0) {
+          throw const MonowaveDecodeException(
+            DecodeFailure.corrupt,
+            'The source could not be read all the way through.',
+          );
+        }
+        if (got == 0) break;
+
+        final samples = got * channels;
+        out.setRange(
+          written,
+          written + samples,
+          _heapOf(core).asInt16List(block, samples),
+        );
+        written += samples;
+      }
+
+      return written == total ? out : Int16List.sublistView(out, 0, written);
+    } finally {
+      if (render != 0) core.renderClose(render);
+      if (block != 0) core.free(block);
+      core
+        ..free(input)
+        ..free(regions)
+        ..free(error);
+    }
+  }
 
   @override
   Future<PlaybackSession> openPlayback({

@@ -45,7 +45,7 @@ void main() {
   testWidgets('the WASM core reports the same ABI as the native core', (
     tester,
   ) async {
-    expect(MonowavePlatform.instance.abiVersion(), 12);
+    expect(MonowavePlatform.instance.abiVersion(), 13);
   });
 
   testWidgets('the WASM core reduces identically to the native core', (
@@ -90,6 +90,65 @@ void main() {
     // `test/decode_test.dart` makes natively, so the two targets are held to
     // one property. A sine reduces to about its peak over root two.
     expect(peaks.rms(0)![10], closeTo(20000 / math.sqrt2, 600));
+  });
+
+  // The node check in tool/verify_wasm.mjs proves the WASM renderer is
+  // byte-identical to the native one. What it cannot exercise is this: the real
+  // Dart web binding, its `_Core` extension type, and its handling of a heap
+  // that moves underneath it. These properties hold with no pinned constant to
+  // regenerate.
+  const document = WaveformDocument([
+    WaveformRegion(sourceStart: 1000, sourceEnd: 9000, fadeIn: 400),
+    WaveformRegion(sourceStart: 20000, sourceEnd: 24000, fadeOut: 600),
+  ]);
+
+  testWidgets('the WASM binding renders a document', (tester) async {
+    final pcm = await MonowavePlatform.instance.renderPcmBytes(
+      bytes: _sine(),
+      document: document,
+    );
+
+    expect(pcm, hasLength(8000 + 4000));
+    // Linear fades are what make these exact rather than merely small.
+    expect(pcm.first, 0, reason: 'the first frame of a fade-in');
+    expect(pcm.last, 0, reason: 'the last frame of a fade-out');
+  });
+
+  testWidgets('gain scales the rendered samples', (tester) async {
+    // Self-contained: two renders of the same audio, one at half gain. No
+    // pinned digest to regenerate, and it still exercises the whole path.
+    const loud = WaveformDocument([
+      WaveformRegion(sourceStart: 5000, sourceEnd: 6000),
+    ]);
+    const quiet = WaveformDocument([
+      WaveformRegion(sourceStart: 5000, sourceEnd: 6000, gain: 0.5),
+    ]);
+
+    final platform = MonowavePlatform.instance;
+    final atFull = await platform.renderPcmBytes(
+      bytes: _sine(),
+      document: loud,
+    );
+    final atHalf = await platform.renderPcmBytes(
+      bytes: _sine(),
+      document: quiet,
+    );
+
+    expect(atHalf, hasLength(atFull.length));
+    for (var i = 0; i < atFull.length; i++) {
+      // Truncation toward zero, so half of an odd value lands one below.
+      expect((atFull[i] * 0.5).truncate() - atHalf[i], inInclusiveRange(0, 1));
+    }
+  });
+
+  testWidgets('the WASM binding reports undecodable bytes', (tester) async {
+    await expectLater(
+      MonowavePlatform.instance.renderPcmBytes(
+        bytes: Uint8List.fromList(List.filled(64, 0)),
+        document: document,
+      ),
+      throwsA(isA<MonowaveDecodeException>()),
+    );
   });
 }
 

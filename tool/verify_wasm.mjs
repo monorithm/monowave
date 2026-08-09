@@ -227,6 +227,120 @@ for (const name of names) {
   core.free(error);
 }
 
+// The M10 check: the WASM renderer produces the samples the native renderer
+// produces, for every format, not just for WAV.
+//
+// This is the one that closes the hole the roadmap expected to live with. The
+// plan had been to decode through the browser and apply the envelope in an
+// AudioWorklet, which would have made MP3 approximate on web because Chrome's
+// decoder is not dr_mp3. It turned out unnecessary: DR_*_NO_STDIO removes only
+// the file entry points, so the WASM build already carries the same decoders,
+// and web now runs the same render loop over them.
+//
+// The document here must match `renderDocument` in tool/dump_fixtures.dart.
+function verifyRender() {
+  const REGIONS = [
+    { start: 0, end: 9000, gain: 1.0, fadeIn: 500, fadeOut: 700 },
+    { start: 20000, end: 26000, gain: 0.35, fadeIn: 0, fadeOut: 0 },
+  ];
+
+  let expected;
+  try {
+    // Node pools Buffer storage, so `.buffer` is usually larger than the file
+    // and starts at an offset. Slicing the whole pool reads other files'
+    // leftovers as samples.
+    const raw = readFileSync('build/fixtures/sine-sweep.render.pcm');
+    expected = new Int16Array(
+      raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength),
+    );
+  } catch {
+    console.error(
+      'FAIL render               build/fixtures/sine-sweep.render.pcm is missing.\n' +
+        '                          Run `dart run tool/dump_fixtures.dart build/fixtures` first.',
+    );
+    return 1;
+  }
+
+  const wav = readFileSync('build/fixtures/sine-sweep.wav');
+  const input = core.malloc(wav.length);
+  const stride = core.wf_region_stride();
+  const regions = core.malloc(stride * REGIONS.length);
+  const error = core.malloc(4);
+
+  let render = 0;
+  let block = 0;
+  try {
+    new Uint8Array(heap(), input, wav.length).set(wav);
+
+    // Field offsets follow from the declaration order in `wf_region`; only the
+    // stride is non-obvious, and the core reports it.
+    for (let i = 0; i < REGIONS.length; i++) {
+      const view = new DataView(heap(), regions + i * stride, stride);
+      view.setFloat64(0, REGIONS[i].start, true);
+      view.setFloat64(8, REGIONS[i].end, true);
+      view.setFloat32(16, REGIONS[i].gain, true);
+      view.setInt32(20, REGIONS[i].fadeIn, true);
+      view.setInt32(24, REGIONS[i].fadeOut, true);
+    }
+
+    render = core.wf_render_open_memory(
+      input,
+      wav.length,
+      regions,
+      REGIONS.length,
+      error,
+    );
+    if (render === 0) {
+      console.error(
+        `FAIL render               wf_render_open_memory failed with ${new Int32Array(heap(), error, 1)[0]}`,
+      );
+      return 1;
+    }
+
+    const channels = core.wf_render_channels(render);
+    const total = core.wf_render_length_frames(render) * channels;
+    const actual = new Int16Array(total);
+    const blockFrames = 1000;
+    block = core.malloc(blockFrames * channels * 2);
+
+    let written = 0;
+    for (;;) {
+      const got = core.wf_render_read(render, block, blockFrames);
+      if (got <= 0) break;
+      actual.set(new Int16Array(heap(), block, got * channels), written);
+      written += got * channels;
+    }
+
+    if (written !== expected.length) {
+      console.error(
+        `FAIL render               ${written} samples, native rendered ${expected.length}`,
+      );
+      return 1;
+    }
+    for (let i = 0; i < written; i++) {
+      if (actual[i] !== expected[i]) {
+        console.error(
+          `FAIL render               sample ${i}: WASM ${actual[i]}, native ${expected[i]}`,
+        );
+        return 1;
+      }
+    }
+
+    console.log(
+      `ok   render      ${String(written).padEnd(11)} samples identical to the native render`,
+    );
+    return 0;
+  } finally {
+    if (render !== 0) core.wf_render_close(render);
+    if (block !== 0) core.free(block);
+    core.free(input);
+    core.free(regions);
+    core.free(error);
+  }
+}
+
+failures += verifyRender();
+
 if (failures > 0) {
   console.error(`\n${failures} check(s) differ between the WASM and native builds.`);
   process.exit(1);

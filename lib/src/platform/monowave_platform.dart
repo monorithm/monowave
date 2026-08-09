@@ -101,6 +101,19 @@ abstract interface class MonowavePlatform {
     required WaveformDocument document,
   });
 
+  /// Renders [document] to 16-bit PCM from bytes already in memory.
+  ///
+  /// The only render path on web, which has no filesystem - and it runs the
+  /// same C loop the exporter does, over the same decoders, so the output is
+  /// byte-identical on all six targets rather than on five.
+  ///
+  /// Prefer [renderPcm] on native when the audio is a file: it streams the
+  /// source rather than holding a copy of the container in memory as well.
+  Future<Int16List> renderPcmBytes({
+    required Uint8List bytes,
+    required WaveformDocument document,
+  });
+
   /// Opens a playback session over [document], reading from [sourcePath].
   ///
   /// What it plays is byte-identical to what [exportWav] would write, because

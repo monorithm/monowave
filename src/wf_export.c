@@ -33,9 +33,13 @@ float wf_envelope(int64_t offset, int64_t length, int32_t fade_in,
   return envelope < 0.0f ? 0.0f : envelope;
 }
 
-#ifndef WF_NO_STDIO
-
 // The implementations live in wf_decode.c; these are declarations only.
+//
+// Outside the stdio guard, along with everything below that does not touch a
+// file. The WASM build has no filesystem, but it does have these decoders -
+// wf_decode_memory already runs them - so web renders through the same loop the
+// exporter uses rather than through a second implementation of it. Only the
+// file entry points are gated. See ROADMAP.md, M10.
 #include "vendor/dr_flac.h"
 #include "vendor/dr_mp3.h"
 #include "vendor/dr_wav.h"
@@ -49,7 +53,61 @@ typedef struct {
   drflac *flac;
   int32_t sample_rate;
   int32_t channels;
+
+  /// A copy of the input, for a memory source. NULL when reading a file.
+  ///
+  /// dr_libs reference the caller's buffer rather than copying it, and a render
+  /// outlives the call that made it - the feeder thread reads from it on
+  /// another thread entirely. So the bytes are copied and owned here.
+  void *owned;
 } wf_source;
+
+/// Sniffs the container from the first bytes. WAV and FLAC announce
+/// themselves; anything else is tried as MP3, which has no reliable magic.
+static int wf_source_kind(const unsigned char *head, size_t read) {
+  if (read >= 12 && memcmp(head, "RIFF", 4) == 0 &&
+      memcmp(head + 8, "WAVE", 4) == 0) {
+    return WF_KIND_WAV;
+  }
+  if (read >= 4 && memcmp(head, "fLaC", 4) == 0) return WF_KIND_FLAC;
+  return WF_KIND_MP3;
+}
+
+static int wf_source_open_memory(wf_source *source, const void *data,
+                                 size_t size) {
+  source->owned = malloc(size);
+  if (source->owned == NULL) return 0;
+  memcpy(source->owned, data, size);
+
+  source->flac = NULL;
+  source->kind =
+      wf_source_kind((const unsigned char *)source->owned, size < 12 ? size : 12);
+
+  switch (source->kind) {
+    case WF_KIND_WAV:
+      if (!drwav_init_memory(&source->wav, source->owned, size, NULL)) break;
+      source->sample_rate = (int32_t)source->wav.sampleRate;
+      source->channels = (int32_t)source->wav.channels;
+      return 1;
+    case WF_KIND_FLAC:
+      source->flac = drflac_open_memory(source->owned, size, NULL);
+      if (source->flac == NULL) break;
+      source->sample_rate = (int32_t)source->flac->sampleRate;
+      source->channels = (int32_t)source->flac->channels;
+      return 1;
+    default:
+      if (!drmp3_init_memory(&source->mp3, source->owned, size, NULL)) break;
+      source->sample_rate = (int32_t)source->mp3.sampleRate;
+      source->channels = (int32_t)source->mp3.channels;
+      return 1;
+  }
+
+  free(source->owned);
+  source->owned = NULL;
+  return 0;
+}
+
+#ifndef WF_NO_STDIO
 
 static int wf_source_open(wf_source *source, const char *path) {
   unsigned char head[12];
@@ -60,15 +118,9 @@ static int wf_source_open(wf_source *source, const char *path) {
   const size_t read = fread(head, 1, sizeof(head), probe);
   fclose(probe);
 
+  source->owned = NULL;
   source->flac = NULL;
-  if (read >= 12 && memcmp(head, "RIFF", 4) == 0 &&
-      memcmp(head + 8, "WAVE", 4) == 0) {
-    source->kind = WF_KIND_WAV;
-  } else if (read >= 4 && memcmp(head, "fLaC", 4) == 0) {
-    source->kind = WF_KIND_FLAC;
-  } else {
-    source->kind = WF_KIND_MP3;
-  }
+  source->kind = wf_source_kind(head, read);
 
   switch (source->kind) {
     case WF_KIND_WAV:
@@ -89,6 +141,8 @@ static int wf_source_open(wf_source *source, const char *path) {
       return 1;
   }
 }
+
+#endif  // WF_NO_STDIO
 
 static int wf_source_seek(wf_source *source, int64_t frame) {
   switch (source->kind) {
@@ -127,6 +181,8 @@ static void wf_source_close(wf_source *source) {
       drmp3_uninit(&source->mp3);
       break;
   }
+  free(source->owned);
+  source->owned = NULL;
 }
 
 /// A render in progress: a source, a copy of the region list, and a position.
@@ -154,6 +210,64 @@ static int64_t wf_region_frames(const wf_region *region) {
   return length > 0 ? length : 0;
 }
 
+int32_t wf_region_stride(void) { return (int32_t)sizeof(wf_region); }
+
+/// Attaches a region list to a render whose source is already open.
+///
+/// Shared by the file and memory entry points, so the two cannot answer
+/// differently about anything but where the bytes came from.
+static wf_render *wf_render_finish(wf_render *render, const wf_region *regions,
+                                   int32_t region_count, int32_t *out_error) {
+  // Copied rather than referenced: a render outlives the caller's array once
+  // playback drives it from another thread.
+  render->regions =
+      (wf_region *)calloc((size_t)region_count, sizeof(wf_region));
+  if (render->regions == NULL) {
+    wf_source_close(&render->source);
+    free(render);
+    *out_error = WF_ERR_MEMORY;
+    return NULL;
+  }
+
+  memcpy(render->regions, regions, (size_t)region_count * sizeof(wf_region));
+  render->region_count = region_count;
+  render->seek_pending = 1;
+  for (int32_t index = 0; index < region_count; index++) {
+    render->length += wf_region_frames(&regions[index]);
+  }
+
+  *out_error = WF_OK;
+  return render;
+}
+
+wf_render *wf_render_open_memory(const void *data, size_t size,
+                                 const wf_region *regions,
+                                 int32_t region_count, int32_t *out_error) {
+  int32_t ignored = 0;
+  if (out_error == NULL) out_error = &ignored;
+
+  if (data == NULL || size == 0 || regions == NULL || region_count <= 0) {
+    *out_error = WF_ERR_ARGUMENT;
+    return NULL;
+  }
+
+  wf_render *render = (wf_render *)calloc(1, sizeof(wf_render));
+  if (render == NULL) {
+    *out_error = WF_ERR_MEMORY;
+    return NULL;
+  }
+
+  if (!wf_source_open_memory(&render->source, data, size)) {
+    free(render);
+    *out_error = WF_ERR_OPEN;
+    return NULL;
+  }
+
+  return wf_render_finish(render, regions, region_count, out_error);
+}
+
+#ifndef WF_NO_STDIO
+
 wf_render *wf_render_open(const char *src_path, const wf_region *regions,
                           int32_t region_count, int32_t *out_error) {
   int32_t ignored = 0;
@@ -170,33 +284,16 @@ wf_render *wf_render_open(const char *src_path, const wf_region *regions,
     return NULL;
   }
 
-  render->regions =
-      (wf_region *)calloc((size_t)region_count, sizeof(wf_region));
-  if (render->regions == NULL) {
-    free(render);
-    *out_error = WF_ERR_MEMORY;
-    return NULL;
-  }
-
   if (!wf_source_open(&render->source, src_path)) {
-    free(render->regions);
     free(render);
     *out_error = WF_ERR_OPEN;
     return NULL;
   }
 
-  // Copied rather than referenced: a render outlives the caller's array once
-  // playback drives it from another thread.
-  memcpy(render->regions, regions, (size_t)region_count * sizeof(wf_region));
-  render->region_count = region_count;
-  render->seek_pending = 1;
-  for (int32_t index = 0; index < region_count; index++) {
-    render->length += wf_region_frames(&regions[index]);
-  }
-
-  *out_error = WF_OK;
-  return render;
+  return wf_render_finish(render, regions, region_count, out_error);
 }
+
+#endif  // WF_NO_STDIO
 
 void wf_render_close(wf_render *render) {
   if (render == NULL) return;
@@ -350,6 +447,8 @@ int32_t wf_render_read(wf_render *render, int16_t *out, int32_t max_frames) {
   return written;
 }
 
+#ifndef WF_NO_STDIO
+
 int32_t wf_export_wav(const char *src_path, const char *out_path,
                       const wf_region *regions, int32_t region_count) {
   if (out_path == NULL) return WF_ERR_ARGUMENT;
@@ -423,9 +522,8 @@ int32_t wf_export_wav(const char *src_path, const char *out_path,
   return WF_ERR_OPEN;
 }
 
-// The renderer reads a source through the same path-based decoders, so it is
-// unavailable here for the same reason. Web playback does not go through this
-// at all; see ROADMAP.md, M10.
+/// The path-based render. Web reaches wf_render_open_memory instead, which is
+/// the same renderer over the same decoders - only the input differs.
 wf_render *wf_render_open(const char *src_path, const wf_region *regions,
                           int32_t region_count, int32_t *out_error) {
   (void)src_path;
@@ -433,44 +531,6 @@ wf_render *wf_render_open(const char *src_path, const wf_region *regions,
   (void)region_count;
   if (out_error != NULL) *out_error = WF_ERR_OPEN;
   return NULL;
-}
-
-void wf_render_close(wf_render *render) { (void)render; }
-
-int32_t wf_render_sample_rate(const wf_render *render) {
-  (void)render;
-  return 0;
-}
-
-int32_t wf_render_channels(const wf_render *render) {
-  (void)render;
-  return 0;
-}
-
-double wf_render_length_frames(const wf_render *render) {
-  (void)render;
-  return 0.0;
-}
-
-int32_t wf_render_set_regions(wf_render *render, const wf_region *regions,
-                              int32_t region_count) {
-  (void)render;
-  (void)regions;
-  (void)region_count;
-  return WF_ERR_OPEN;
-}
-
-int32_t wf_render_seek(wf_render *render, double output_frame) {
-  (void)render;
-  (void)output_frame;
-  return WF_ERR_OPEN;
-}
-
-int32_t wf_render_read(wf_render *render, int16_t *out, int32_t max_frames) {
-  (void)render;
-  (void)out;
-  (void)max_frames;
-  return -1;
 }
 
 #endif  // WF_NO_STDIO
