@@ -5,7 +5,7 @@
 
 import 'dart:io';
 
-import 'package:monokit/monokit.dart';
+import 'package:monokit_ui/monokit_ui.dart';
 import 'package:monowave/monowave.dart';
 
 import 'editor/editor_page.dart';
@@ -13,6 +13,15 @@ import 'fixtures.dart';
 import 'record_page.dart';
 import 'result_page.dart';
 import 'ui/wave_chrome.dart';
+
+/// The version the front door advertises, and the one `widget_test.dart`
+/// asserts on.
+///
+/// One constant rather than a literal in each: the badge said `0.2.0` and the
+/// test agreed with it for two releases, because agreeing with each other is
+/// all two hardcoded copies ever have to do. Bump it with `pubspec.yaml` at the
+/// root - nothing reads that file at runtime.
+const monowaveVersion = '0.3.1';
 
 void main() => runApp(const MonowaveExampleApp());
 
@@ -192,9 +201,13 @@ class _Hero extends StatelessWidget {
             ),
             const Spacer(),
             const MonoBadge(
-              variant: MonoBadgeVariant.outline,
+              // `outline` is gone in monokit_ui 3.0.0: the variant ladder is the
+              // state vocabulary now, and `primary`, `secondary` and `outline`
+              // all collapsed into `neutral`. A version chip reports no status,
+              // so `neutral` is the one it was always asking for.
+              variant: MonoBadgeVariant.neutral,
               size: MonoBadgeSize.sm,
-              child: Text('0.2.0'),
+              child: Text(monowaveVersion),
             ),
           ],
         ),

@@ -3,7 +3,7 @@
 // supplies the data.
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:monokit/monokit.dart';
+import 'package:monokit_ui/monokit_ui.dart';
 import 'package:monowave/monowave.dart';
 import 'package:monowave_example/fixtures.dart';
 import 'package:monowave_example/main.dart';
@@ -14,7 +14,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('monowave'), findsOneWidget);
-    expect(find.text('0.2.0'), findsOneWidget);
+    expect(find.text(monowaveVersion), findsOneWidget);
     expect(find.text('Record'), findsOneWidget);
     expect(find.text('Open the bundled sample'), findsOneWidget);
   });

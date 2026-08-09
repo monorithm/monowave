@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:monokit/monokit.dart';
+import 'package:monokit_ui/monokit_ui.dart';
 import 'package:monowave/monowave.dart';
 
 /// Colors and geometry for [PeakWaveform].

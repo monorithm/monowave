@@ -5,7 +5,7 @@
 /// package ships no widgets, so every pixel of this app is host code.
 library;
 
-import 'package:monokit/monokit.dart';
+import 'package:monokit_ui/monokit_ui.dart';
 
 /// Page transition used throughout.
 ///
