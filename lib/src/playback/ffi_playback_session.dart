@@ -57,15 +57,7 @@ class FfiPlaybackSession implements PlaybackSession, Finalizable {
     final error = calloc<Int32>();
 
     try {
-      for (var i = 0; i < document.regions.length; i++) {
-        final region = document.regions[i];
-        regions[i]
-          ..sourceStart = region.sourceStart.toDouble()
-          ..sourceEnd = region.sourceEnd.toDouble()
-          ..gain = region.gain
-          ..fadeIn = region.fadeIn
-          ..fadeOut = region.fadeOut;
-      }
+      _writeRegions(regions, document);
 
       final playback = bindings.wfPlaybackCreate(
         path.cast(),
@@ -90,6 +82,74 @@ class FfiPlaybackSession implements PlaybackSession, Finalizable {
         ..free(path)
         ..free(regions)
         ..free(error);
+    }
+  }
+
+  /// The same session over bytes already in memory.
+  ///
+  /// The bytes are copied by the C side, because dr_libs reference a caller's
+  /// buffer rather than copying it and the feeder reads from it on another
+  /// thread.
+  static Future<FfiPlaybackSession> openBytes({
+    required Uint8List bytes,
+    required WaveformDocument document,
+    int ringFrames = _ringFrames,
+  }) async {
+    if (document.isEmpty) {
+      throw const PlaybackUnavailable(
+        'There is nothing to play: the document has no regions.',
+      );
+    }
+
+    final input = calloc<Uint8>(bytes.length);
+    final regions = calloc<bindings.WfRegion>(document.regions.length);
+    final error = calloc<Int32>();
+
+    try {
+      input.asTypedList(bytes.length).setAll(0, bytes);
+      _writeRegions(regions, document);
+
+      final playback = bindings.wfPlaybackCreateMemory(
+        input.cast(),
+        bytes.length,
+        regions,
+        document.regions.length,
+        ringFrames,
+        error,
+      );
+      if (playback == nullptr) {
+        throw PlaybackUnavailable(
+          'Could not open ${bytes.length} bytes for playback '
+          '(code ${error.value})',
+        );
+      }
+
+      return FfiPlaybackSession._(
+        playback,
+        document,
+        bindings.wfPlaybackSampleRate(playback),
+      );
+    } finally {
+      calloc
+        ..free(input)
+        ..free(regions)
+        ..free(error);
+    }
+  }
+
+  /// Lays a document out as `wf_region` structs.
+  static void _writeRegions(
+    Pointer<bindings.WfRegion> into,
+    WaveformDocument document,
+  ) {
+    for (var i = 0; i < document.regions.length; i++) {
+      final region = document.regions[i];
+      into[i]
+        ..sourceStart = region.sourceStart.toDouble()
+        ..sourceEnd = region.sourceEnd.toDouble()
+        ..gain = region.gain
+        ..fadeIn = region.fadeIn
+        ..fadeOut = region.fadeOut;
     }
   }
 
@@ -181,15 +241,7 @@ class FfiPlaybackSession implements PlaybackSession, Finalizable {
 
     final regions = calloc<bindings.WfRegion>(document.regions.length);
     try {
-      for (var i = 0; i < document.regions.length; i++) {
-        final region = document.regions[i];
-        regions[i]
-          ..sourceStart = region.sourceStart.toDouble()
-          ..sourceEnd = region.sourceEnd.toDouble()
-          ..gain = region.gain
-          ..fadeIn = region.fadeIn
-          ..fadeOut = region.fadeOut;
-      }
+      _writeRegions(regions, document);
 
       final code = bindings.wfPlaybackSetRegions(
         _playback,

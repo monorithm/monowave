@@ -91,7 +91,7 @@ mkdir -p assets
   --no-entry \
   -sSTANDALONE_WASM \
   -sALLOW_MEMORY_GROWTH=1 \
-  -sEXPORTED_FUNCTIONS=_wf_abi_version,_wf_reduce_minmax,_wf_decode_memory,_wf_peaks_sample_rate,_wf_peaks_channels,_wf_peaks_length,_wf_peaks_levels,_wf_peaks_base_spp,_wf_peaks_pair_count,_wf_peaks_data,_wf_peaks_rms,_wf_peaks_free,_wf_envelope,_wf_region_stride,_wf_render_open_memory,_wf_render_close,_wf_render_read,_wf_render_seek,_wf_render_set_regions,_wf_render_length_frames,_wf_render_channels,_malloc,_free \
+  -sEXPORTED_FUNCTIONS=_wf_abi_version,_wf_reduce_minmax,_wf_decode_memory,_wf_peaks_sample_rate,_wf_peaks_channels,_wf_peaks_length,_wf_peaks_levels,_wf_peaks_base_spp,_wf_peaks_pair_count,_wf_peaks_data,_wf_peaks_rms,_wf_peaks_free,_wf_envelope,_wf_region_stride,_wf_render_open_memory,_wf_render_close,_wf_render_read,_wf_render_seek,_wf_render_set_regions,_wf_render_length_frames,_wf_render_channels,_wf_render_sample_rate,_malloc,_free \
   -o "$OUT"
 
 echo "built $OUT ($(wc -c <"$OUT" | tr -d ' ') bytes)"

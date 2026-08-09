@@ -321,18 +321,41 @@ lived with. `tool/verify_wasm.mjs` renders through the WASM module and compares
 every sample against a native render; changing the int16 conversion from
 truncation to rounding fails it at sample 1.
 
-### What is still missing: an audio device on web
+### Web plays, through a WebAudio graph
 
-There is no `PlaybackSession` on web. `openPlayback` still throws there.
+`openPlaybackBytes` returns a `PlaybackSession` on web as well as natively.
 
-That is a smaller job than it was, because the hard half is done - web can
-produce exactly the right samples. What remains is an output device for them: a
-WebAudio graph over an `AudioBuffer`, or a worklet pulling from the WASM heap
-for longer documents. It needs no C, and nothing about it can change what the
-samples are.
+The graph is deliberately plain. The whole render goes into an `AudioBuffer`
+before playback starts, and an `AudioBufferSourceNode` plays it. There is no
+ring and no feeder, because the browser owns the audio thread and there is
+nothing for a feeder to race. That is the right shape for a preview of an edit
+and the wrong one for an audiobook: a long document costs its whole length in
+memory, at four bytes per frame per channel. The limit is stated rather than
+discovered.
+
+`underruns` is always zero there, and that is a fact rather than a stub. An
+underrun is a feeder losing a race with a device. With the render resident up
+front the race does not exist, and the cost is paid in memory instead.
+
+The playhead still comes from the audio clock. `AudioContext.currentTime`
+advances with the hardware, which is the same rule the native session follows by
+counting frames the device consumed.
+
+**One thing a host must know:** browsers refuse to start an `AudioContext`
+without a user gesture, and report it as a context stuck in `suspended` rather
+than as an error. `play()` detects that and throws `PlaybackUnavailable` saying
+to call it from a tap. A driven test has no gesture, so the browser test asserts
+`play` the way the native test asserts a missing device - it either works or it
+reports why, and what it must not do is hang.
+
+`openPlayback` with a path still throws on web, which has no filesystem.
+
+### What did not port, and why that is right
 
 The M7 to M9 transport - the ring, the feeder thread, the seek handshake - is
-native-only by design and does not port. A browser has its own scheduler.
+native-only by design. A browser has its own scheduler and its own audio thread,
+and reimplementing a feeder against them would be inventing a problem. What
+crosses is the part that must: the samples, from the same C loop.
 
 ## What playback will not do
 

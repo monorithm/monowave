@@ -22,7 +22,7 @@ extern "C" {
 #endif
 
 // Bumped whenever a signature below changes. Dart asserts on it at startup.
-#define WF_ABI_VERSION 13
+#define WF_ABI_VERSION 14
 
 // Cap on pyramid depth. 24 levels at a 128-sample base covers a bit over a
 // billion samples per pair - far past any real recording.
@@ -334,6 +334,16 @@ WF_EXPORT wf_playback *wf_playback_create(const char *src_path,
                                           int32_t region_count,
                                           int32_t ring_frames,
                                           int32_t *out_error);
+/// The same, over bytes already in memory. Not used by the web binding, which
+/// has its own output device - but it keeps the two entry points symmetric with
+/// `wf_render_open` and `wf_render_open_memory`, and a host holding audio in
+/// memory on native should not have to write a temporary file to play it.
+WF_EXPORT wf_playback *wf_playback_create_memory(const void *data, size_t size,
+                                                 const wf_region *regions,
+                                                 int32_t region_count,
+                                                 int32_t ring_frames,
+                                                 int32_t *out_error);
+
 WF_EXPORT void wf_playback_destroy(wf_playback *playback);
 
 /// Moves up to `frames` interleaved frames out of the ring into `out`.

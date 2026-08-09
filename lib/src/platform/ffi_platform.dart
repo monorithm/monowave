@@ -201,6 +201,12 @@ class FfiMonowavePlatform implements MonowavePlatform {
   }) => FfiPlaybackSession.open(sourcePath: sourcePath, document: document);
 
   @override
+  Future<PlaybackSession> openPlaybackBytes({
+    required Uint8List bytes,
+    required WaveformDocument document,
+  }) => FfiPlaybackSession.openBytes(bytes: bytes, document: document);
+
+  @override
   Future<CaptureSession> openCapture([
     CaptureConfig config = const CaptureConfig(),
   ]) => FfiCaptureSession.open(config);

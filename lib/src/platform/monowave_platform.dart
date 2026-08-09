@@ -126,6 +126,21 @@ abstract interface class MonowavePlatform {
     required WaveformDocument document,
   });
 
+  /// Opens a playback session over bytes already in memory.
+  ///
+  /// The only playback path on web, which has no filesystem. On native it is
+  /// the same engine as [openPlayback], reading from a copy of the bytes rather
+  /// than streaming a file.
+  ///
+  /// What plays is byte-identical to what [exportWav] would write on every
+  /// target, because every target renders through the same C loop. What differs
+  /// is only the device underneath: miniaudio natively, a WebAudio graph on
+  /// web.
+  Future<PlaybackSession> openPlaybackBytes({
+    required Uint8List bytes,
+    required WaveformDocument document,
+  });
+
   /// Opens a microphone capture session.
   ///
   /// Does not request permission. A headless package has no UI to explain why

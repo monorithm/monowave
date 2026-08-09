@@ -336,6 +336,25 @@ external Pointer<WfPlayback> wfPlaybackCreate(
   Pointer<Int32> outError,
 );
 
+@Native<
+  Pointer<WfPlayback> Function(
+    Pointer<Void>,
+    Size,
+    Pointer<WfRegion>,
+    Int32,
+    Int32,
+    Pointer<Int32>,
+  )
+>(symbol: 'wf_playback_create_memory')
+external Pointer<WfPlayback> wfPlaybackCreateMemory(
+  Pointer<Void> data,
+  int size,
+  Pointer<WfRegion> regions,
+  int regionCount,
+  int ringFrames,
+  Pointer<Int32> outError,
+);
+
 @Native<Void Function(Pointer<WfPlayback>)>(symbol: 'wf_playback_destroy')
 external void wfPlaybackDestroy(Pointer<WfPlayback> playback);
 
