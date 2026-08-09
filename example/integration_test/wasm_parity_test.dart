@@ -21,6 +21,14 @@
 // `assets/monowave.wasm`, a rename the extension types cannot see at compile
 // time, or a `_copyOut` that reads a series out of the heap and then forgets to
 // pass it on.
+//
+// EVERY CASE HERE MUST BE `testWidgets`, NOT `test`. `integrationDriver` decides
+// the exit code from `IntegrationTestWidgetsFlutterBinding.results`, and only
+// `testWidgets` records into it - a plain `test` leaves the map empty, an empty
+// map reads as "all passed", and the driver prints `All tests passed.` and exits
+// 0 no matter what failed. This file was written with `test` first and a
+// deliberately broken assertion still went green, which is the same species of
+// bug as the one the file exists to catch.
 
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -34,11 +42,15 @@ void main() {
 
   setUpAll(MonowavePlatform.instance.ensureInitialized);
 
-  test('the WASM core reports the same ABI as the native core', () {
+  testWidgets('the WASM core reports the same ABI as the native core', (
+    tester,
+  ) async {
     expect(MonowavePlatform.instance.abiVersion(), 8);
   });
 
-  test('the WASM core reduces identically to the native core', () {
+  testWidgets('the WASM core reduces identically to the native core', (
+    tester,
+  ) async {
     final peak = MonowavePlatform.instance.reduceMinMax(
       Int16List.fromList([0, 1200, -3400, 900, -50, 32767, -32768, 7]),
     );
@@ -46,14 +58,16 @@ void main() {
     expect(peak, (min: -32768, max: 32767));
   });
 
-  test('an empty window reduces to silence', () {
+  testWidgets('an empty window reduces to silence', (tester) async {
     expect(MonowavePlatform.instance.reduceMinMax(Int16List(0)), (
       min: 0,
       max: 0,
     ));
   });
 
-  test('the WASM binding returns the RMS series, not just the peaks', () async {
+  testWidgets('the WASM binding returns the RMS series, not just the peaks', (
+    tester,
+  ) async {
     // The one leg of the RMS parity that neither the compiler nor
     // `tool/verify_wasm.mjs` can reach. The node gate proves the artifact
     // computes RMS and exports it; the extension type makes a missing member a
