@@ -22,7 +22,7 @@ extern "C" {
 #endif
 
 // Bumped whenever a signature below changes. Dart asserts on it at startup.
-#define WF_ABI_VERSION 7
+#define WF_ABI_VERSION 8
 
 // Cap on pyramid depth. 24 levels at a 128-sample base covers a bit over a
 // billion samples per pair - far past any real recording.
@@ -103,6 +103,14 @@ typedef struct {
 
 typedef struct wf_capture wf_capture;
 
+/// Frames `wf_capture_scratch` holds. At the default hop a 16 ms drain produces
+/// one or two, so this is headroom for a stalled consumer catching up.
+#define WF_SCRATCH_FRAMES 256
+
+/// Samples `wf_capture_pcm_scratch` holds. 16 ms at 44.1 kHz is 706 samples, so
+/// this is about a quarter second of slack.
+#define WF_SCRATCH_SAMPLES 16384
+
 /// Allocates a session. Nothing here runs on the audio thread.
 ///
 /// `ring_capacity` is rounded up to a power of two. `take_capacity` bounds how
@@ -130,6 +138,29 @@ WF_EXPORT void wf_capture_destroy(wf_capture *capture);
 /// call from any one thread while the audio thread produces.
 WF_EXPORT int32_t wf_capture_drain(wf_capture *capture, wf_frame *out,
                                    int32_t max);
+
+/// Scratch for `wf_capture_drain` to write into, allocated with the session and
+/// freed by `wf_capture_destroy`. Holds `WF_SCRATCH_FRAMES` frames.
+///
+/// A caller is free to pass its own buffer instead. This exists for bindings
+/// that cannot free memory deterministically: a garbage-collected session is
+/// reclaimed by a finalizer over `wf_capture_destroy`, which can only release
+/// what the session owns, so a drain buffer allocated on the other side of the
+/// boundary would outlive the struct it belongs to.
+WF_EXPORT wf_frame *wf_capture_scratch(wf_capture *capture);
+WF_EXPORT int32_t wf_capture_scratch_frames(const wf_capture *capture);
+
+/// The same, for `wf_capture_drain_pcm`. NULL, and a size of zero, when the
+/// session was created with a `pcm_capacity` of 0 and keeps no audio.
+WF_EXPORT int16_t *wf_capture_pcm_scratch(wf_capture *capture);
+WF_EXPORT int32_t wf_capture_pcm_scratch_samples(const wf_capture *capture);
+
+/// Sessions created and not yet destroyed, across the whole process.
+///
+/// Exported for the same reason `wf_capture_feed` is: it makes a binding's
+/// ownership testable rather than asserted. A binding that drops a session
+/// without destroying it shows up here as a count that never falls.
+WF_EXPORT int32_t wf_capture_live(void);
 
 /// Hops the audio thread produced, and hops the consumer was too slow to take.
 /// Doubles rather than int64 so both bindings can read them; see

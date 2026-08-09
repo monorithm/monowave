@@ -20,7 +20,7 @@ void main() {
   setUpAll(platform.ensureInitialized);
 
   test('the ABI matches what these bindings were written against', () {
-    expect(platform.abiVersion(), 7);
+    expect(platform.abiVersion(), 8);
   });
 
   group('decoding WAV', () {

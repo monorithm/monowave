@@ -60,12 +60,22 @@ struct wf_capture {
   _Atomic int32_t take_count;
   _Atomic int32_t overflowed;
 
+  // Consumer-side scratch for the two drain calls. Owned here rather than by
+  // the caller so that destroying a session releases every allocation it needs,
+  // in one call - see wf_capture_scratch in monowave.h for why that matters.
+  wf_frame *scratch;
+  int16_t *pcm_scratch;
+
 #ifndef WF_NO_DEVICE
   ma_device device;
   int has_device;
   int started;
 #endif
 };
+
+/// Live sessions, for wf_capture_live. Atomic because sessions on two isolates
+/// are two threads, even though nothing else here is shared between them.
+static _Atomic int32_t wf_live_sessions;
 
 static int32_t wf_round_up_pow2(int32_t value) {
   int32_t result = 1;
@@ -206,6 +216,9 @@ wf_capture *wf_capture_create(int32_t sample_rate, int32_t channels,
     *out_error = WF_ERR_MEMORY;
     return NULL;
   }
+  // Counted from here rather than on the way out, so the failure paths below -
+  // which all destroy the half-built session - stay balanced.
+  atomic_fetch_add_explicit(&wf_live_sessions, 1, memory_order_relaxed);
 
   capture->sample_rate = sample_rate;
   capture->channels = channels;
@@ -217,8 +230,10 @@ wf_capture *wf_capture_create(int32_t sample_rate, int32_t channels,
   capture->take = (int16_t *)calloc((size_t)take_capacity * 2, sizeof(int16_t));
   capture->take_rms =
       (int16_t *)calloc((size_t)take_capacity, sizeof(int16_t));
+  capture->scratch =
+      (wf_frame *)calloc((size_t)WF_SCRATCH_FRAMES, sizeof(wf_frame));
   if (capture->ring == NULL || capture->take == NULL ||
-      capture->take_rms == NULL) {
+      capture->take_rms == NULL || capture->scratch == NULL) {
     wf_capture_destroy(capture);
     *out_error = WF_ERR_MEMORY;
     return NULL;
@@ -228,7 +243,9 @@ wf_capture *wf_capture_create(int32_t sample_rate, int32_t channels,
   if (pcm_capacity > 0) {
     const int32_t pcm_size = wf_round_up_pow2(pcm_capacity);
     capture->pcm = (int16_t *)calloc((size_t)pcm_size, sizeof(int16_t));
-    if (capture->pcm == NULL) {
+    capture->pcm_scratch =
+        (int16_t *)calloc((size_t)WF_SCRATCH_SAMPLES, sizeof(int16_t));
+    if (capture->pcm == NULL || capture->pcm_scratch == NULL) {
       wf_capture_destroy(capture);
       *out_error = WF_ERR_MEMORY;
       return NULL;
@@ -358,6 +375,30 @@ int32_t wf_capture_drain_pcm(wf_capture *capture, int16_t *out,
   return count;
 }
 
+wf_frame *wf_capture_scratch(wf_capture *capture) {
+  if (capture == NULL) return NULL;
+  return capture->scratch;
+}
+
+int32_t wf_capture_scratch_frames(const wf_capture *capture) {
+  if (capture == NULL || capture->scratch == NULL) return 0;
+  return WF_SCRATCH_FRAMES;
+}
+
+int16_t *wf_capture_pcm_scratch(wf_capture *capture) {
+  if (capture == NULL) return NULL;
+  return capture->pcm_scratch;
+}
+
+int32_t wf_capture_pcm_scratch_samples(const wf_capture *capture) {
+  if (capture == NULL || capture->pcm_scratch == NULL) return 0;
+  return WF_SCRATCH_SAMPLES;
+}
+
+int32_t wf_capture_live(void) {
+  return atomic_load_explicit(&wf_live_sessions, memory_order_relaxed);
+}
+
 double wf_capture_pcm_dropped(const wf_capture *capture) {
   if (capture == NULL) return 0.0;
   return (double)atomic_load_explicit(&capture->pcm_dropped,
@@ -425,10 +466,16 @@ wf_peaks *wf_capture_take_peaks(wf_capture *capture, int32_t *out_error) {
 
 void wf_capture_destroy(wf_capture *capture) {
   if (capture == NULL) return;
+  // Closes the device first. This is the part that matters when a binding's
+  // finalizer calls it rather than the binding itself: the microphone stops
+  // when the session is collected, not when the process exits.
   wf_capture_stop(capture);
   free(capture->ring);
   free(capture->pcm);
   free(capture->take);
   free(capture->take_rms);
+  free(capture->scratch);
+  free(capture->pcm_scratch);
   free(capture);
+  atomic_fetch_sub_explicit(&wf_live_sessions, 1, memory_order_relaxed);
 }

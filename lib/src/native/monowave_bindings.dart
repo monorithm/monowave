@@ -157,6 +157,39 @@ external int wfCaptureDrain(
   int max,
 );
 
+/// Drain scratch the session owns, rather than a buffer allocated here.
+///
+/// A `calloc` on this side would have to be freed on this side, and a session
+/// that is dropped without `dispose()` never gets the chance - the finalizer
+/// over [wfCaptureDestroy] can only release what the C struct owns. Sizes come
+/// from C too, so the two cannot drift.
+@Native<Pointer<WfFrame> Function(Pointer<WfCapture>)>(
+  symbol: 'wf_capture_scratch',
+)
+external Pointer<WfFrame> wfCaptureScratch(Pointer<WfCapture> capture);
+
+@Native<Int32 Function(Pointer<WfCapture>)>(symbol: 'wf_capture_scratch_frames')
+external int wfCaptureScratchFrames(Pointer<WfCapture> capture);
+
+/// The PCM equivalent. `nullptr`, with a size of zero, when the session keeps
+/// no audio.
+@Native<Pointer<Int16> Function(Pointer<WfCapture>)>(
+  symbol: 'wf_capture_pcm_scratch',
+)
+external Pointer<Int16> wfCapturePcmScratch(Pointer<WfCapture> capture);
+
+@Native<Int32 Function(Pointer<WfCapture>)>(
+  symbol: 'wf_capture_pcm_scratch_samples',
+)
+external int wfCapturePcmScratchSamples(Pointer<WfCapture> capture);
+
+/// Sessions the C core has created and not yet destroyed.
+///
+/// The seam the finalizer test asserts on: a session dropped without `dispose()`
+/// must eventually bring this back down on its own.
+@Native<Int32 Function()>(symbol: 'wf_capture_live')
+external int wfCaptureLive();
+
 @Native<Double Function(Pointer<WfCapture>)>(symbol: 'wf_capture_produced')
 external double wfCaptureProduced(Pointer<WfCapture> capture);
 
@@ -217,4 +250,13 @@ external int wfExportWav(
 final Pointer<NativeFinalizerFunction> wfPeaksFreeAddress =
     Native.addressOf<NativeFunction<Void Function(Pointer<WfPeaks>)>>(
       wfPeaksFree,
+    ).cast();
+
+/// The address of [wfCaptureDestroy], for attaching to a [NativeFinalizer].
+///
+/// `wf_capture_destroy` stops the device before it frees anything, so a session
+/// collected without `dispose()` releases the microphone as well as the memory.
+final Pointer<NativeFinalizerFunction> wfCaptureDestroyAddress =
+    Native.addressOf<NativeFunction<Void Function(Pointer<WfCapture>)>>(
+      wfCaptureDestroy,
     ).cast();

@@ -15,19 +15,37 @@ import 'capture_session.dart';
 /// Nothing here runs on the audio thread. The audio thread's whole job is in C:
 /// accumulate a hop, reduce it, publish it to a lock-free ring. This side wakes
 /// on a timer and moves whatever accumulated into Dart.
-class FfiCaptureSession implements CaptureSession {
-  FfiCaptureSession._(this._capture, this.config, this._sink)
-    : scope = CaptureScope(capacity: config.scopeCapacity),
-      _drainBuffer = calloc<bindings.WfFrame>(_drainBatch),
-      _pcmBuffer = config.recordTo == null ? nullptr : calloc<Int16>(_pcmBatch);
+///
+/// **Call [dispose] when finished.** A [NativeFinalizer] destroys a session that
+/// is collected without one, so dropping a session cannot leave the microphone
+/// open indefinitely - but that is a backstop, not a substitute. It runs
+/// whenever the collector happens to get to the object, which may be long after
+/// the recording ended and is not guaranteed to happen at all before the process
+/// exits. Nothing else releases the device promptly.
+class FfiCaptureSession implements CaptureSession, Finalizable {
+  FfiCaptureSession._(
+    Pointer<bindings.WfCapture> capture,
+    this.config,
+    this._sink,
+  ) : _capture = capture,
+      scope = CaptureScope(capacity: config.scopeCapacity),
+      // Scratch the C side owns, sized there too. A `calloc` here would have to
+      // be freed here, and a session that is collected rather than disposed
+      // never gets the chance - which is the one case the finalizer exists for.
+      _drainBuffer = bindings.wfCaptureScratch(capture),
+      _drainBatch = bindings.wfCaptureScratchFrames(capture),
+      _pcmBuffer = bindings.wfCapturePcmScratch(capture),
+      _pcmBatch = bindings.wfCapturePcmScratchSamples(capture) {
+    _finalizer.attach(this, capture.cast(), detach: this);
+  }
 
-  /// Frames moved per wake-up. At the default hop, 16 ms produces one or two
-  /// frames, so this is generous headroom for a stalled consumer catching up.
-  static const _drainBatch = 256;
-
-  /// Samples moved per wake-up. 16 ms at 44.1 kHz is 706, so this is about a
-  /// quarter second of slack.
-  static const _pcmBatch = 16384;
+  /// Destroys a session that was dropped without [dispose].
+  ///
+  /// `wf_capture_destroy` stops the device before freeing anything, so this
+  /// reclaims the input device as well as the struct, both rings, the take
+  /// history and the two drain buffers. Everything a session owns hangs off
+  /// that one pointer, which is why the drain buffers live in C.
+  static final _finalizer = NativeFinalizer(bindings.wfCaptureDestroyAddress);
 
   static Future<FfiCaptureSession> open(CaptureConfig config) async {
     final error = calloc<Int32>();
@@ -52,11 +70,20 @@ class FfiCaptureSession implements CaptureSession {
       RandomAccessFile? sink;
       final path = config.recordTo;
       if (path != null) {
-        sink = await File(path).open(mode: FileMode.write);
-        // A placeholder header, rewritten with real sizes at stop. Writing it
-        // up front keeps the audio at a fixed offset, so the file is streamable
-        // rather than assembled in memory.
-        await sink.writeFrom(_wavHeader(config, 0));
+        try {
+          sink = await File(path).open(mode: FileMode.write);
+          // A placeholder header, rewritten with real sizes at stop. Writing it
+          // up front keeps the audio at a fixed offset, so the file is
+          // streamable rather than assembled in memory.
+          await sink.writeFrom(_wavHeader(config, 0));
+        } catch (_) {
+          // An unwritable path would otherwise leak the session outright: no
+          // Dart object exists yet for the finalizer to be attached to, so
+          // nothing at all owns the pointer if this escapes.
+          await sink?.close();
+          bindings.wfCaptureDestroy(capture);
+          rethrow;
+        }
       }
 
       return FfiCaptureSession._(capture, config, sink);
@@ -66,8 +93,16 @@ class FfiCaptureSession implements CaptureSession {
   }
 
   final Pointer<bindings.WfCapture> _capture;
+
+  /// Frames moved per wake-up, and where they land. At the default hop, 16 ms
+  /// produces one or two, so the buffer is headroom for a stalled consumer.
   final Pointer<bindings.WfFrame> _drainBuffer;
+  final int _drainBatch;
+
+  /// The same for raw audio, or `nullptr` and zero when none is kept.
   final Pointer<Int16> _pcmBuffer;
+  final int _pcmBatch;
+
   final RandomAccessFile? _sink;
   int _samplesWritten = 0;
 
@@ -121,8 +156,34 @@ class FfiCaptureSession implements CaptureSession {
 
     _recording = true;
     _paused = false;
-    _timer = Timer.periodic(config.drainInterval, (_) => drain());
+    _timer = Timer.periodic(
+      config.drainInterval,
+      _drainWeakly(WeakReference(this)),
+    );
   }
+
+  /// A periodic tick that does not keep the session alive.
+  ///
+  /// `(_) => drain()` would capture `this`, and a pending timer is a GC root, so
+  /// a session dropped mid-recording would stay reachable for as long as it kept
+  /// ticking - forever - and the finalizer would never run. That is precisely
+  /// the case where a leak matters most, because the device is still open.
+  /// Holding the session weakly instead means a dropped one is collected, the
+  /// next tick finds nothing and cancels itself, and `wf_capture_destroy` closes
+  /// the microphone.
+  ///
+  /// Static, and taking the reference already made, so that no strong reference
+  /// to the session is ever in scope for the closure to capture by accident.
+  static void Function(Timer) _drainWeakly(
+    WeakReference<FfiCaptureSession> reference,
+  ) => (timer) {
+    final session = reference.target;
+    if (session == null) {
+      timer.cancel();
+      return;
+    }
+    session.drain();
+  };
 
   @override
   Future<void> pause() async {
@@ -248,10 +309,18 @@ class FfiCaptureSession implements CaptureSession {
 
     _timer?.cancel();
     _timer = null;
-    await _frames.close();
+
+    // Detach first, so the finalizer cannot come back later and destroy a
+    // pointer this call has already freed. `_disposed` guards the same thing
+    // against a second dispose: a double destroy would corrupt the heap.
+    //
+    // Both before the await, so nothing native is left to run in a continuation
+    // - and the scratch buffers need no separate free, because destroying the
+    // session releases them along with everything else it owns.
+    _finalizer.detach(this);
     bindings.wfCaptureDestroy(_capture);
-    calloc.free(_drainBuffer);
-    if (_pcmBuffer != nullptr) calloc.free(_pcmBuffer);
+
+    await _frames.close();
   }
 
   void _assertUsable() {

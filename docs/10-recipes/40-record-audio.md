@@ -80,6 +80,17 @@ await session.dispose();
 
 The output is 16-bit PCM WAV, which is also what the exporter reads, so a recording can be trimmed and exported without a second format in play.
 
+## Dispose the session
+
+`dispose()` closes the input device and releases everything the C side allocated for the session: both rings, the take history and the drain buffers.
+Call it, and call it as soon as the recording is over.
+It is idempotent, and it is separate from `stop()` -- `stop` ends the take and hands you peaks, `dispose` releases the session, and the peaks are disposed separately again.
+
+A session that is garbage collected without one **is** destroyed, by a finalizer over the same C call, so a forgotten `dispose()` cannot leave the microphone open for the life of the process.
+Treat that as a backstop rather than a substitute.
+It runs whenever the collector happens to reach the object, which may be long after the user believes recording stopped, and is not guaranteed to happen at all before the process exits.
+Nothing but `dispose()` releases the device promptly.
+
 ## Not on web
 
 `WasmMonowavePlatform.openCapture` throws rather than pretending otherwise.

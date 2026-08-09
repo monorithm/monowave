@@ -6,11 +6,13 @@
 // by hand on a phone.
 
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:monowave/monowave.dart';
 import 'package:monowave/src/capture/ffi_capture_session.dart';
+import 'package:monowave/src/native/monowave_bindings.dart' as bindings;
 import 'package:test/test.dart';
 
 const _hop = 512;
@@ -24,6 +26,61 @@ Int16List _tone(int frames, {int amplitude = 20000, int channels = 1}) {
     }
   }
   return samples;
+}
+
+/// A short take, so a batch of these is kilobytes rather than megabytes.
+const _dropped = CaptureConfig(hop: _hop, maxDuration: Duration(seconds: 1));
+
+/// Opens [count] sessions in a helper isolate, disposes none of them, and
+/// reports how many the C core had live before the isolate went away.
+///
+/// The helper isolate is what makes this deterministic. Dropping the sessions on
+/// the test's own stack does not: the VM scans the machine stack
+/// conservatively, so a dead slot pointing at the last session opened keeps it
+/// alive across collections, indefinitely and unpredictably. That is a test
+/// artifact rather than a leak, but it makes the assertion unwritable. An
+/// isolate that has exited has no stack to hold anything.
+Future<int> _openAndDrop(int count) => Isolate.run(() async {
+  for (var i = 0; i < count; i++) {
+    await FfiCaptureSession.open(_dropped);
+  }
+  // Read from inside, while the sessions are unambiguously still live. Read
+  // from the test after the isolate is gone and there is nothing left to see.
+  return bindings.wfCaptureLive();
+});
+
+/// The same, disposing each session properly first.
+Future<int> _openDisposeAndDrop(int count) => Isolate.run(() async {
+  for (var i = 0; i < count; i++) {
+    await (await FfiCaptureSession.open(_dropped)).dispose();
+  }
+  return bindings.wfCaptureLive();
+});
+
+/// Waits for [until] to hold, allocating to hurry a collection along.
+///
+/// Reclaiming a dropped isolate's objects normally needs nothing more than the
+/// isolate exiting, so this usually returns on the first check. The pressure is
+/// for the case where it does not: there is no way to ask the VM to collect, so
+/// churning new space and holding each round's allocation across the next one -
+/// which grows old space too - is the only lever, and yielding in between is
+/// what lets the finalizer callbacks run. Returns whether [until] ever held.
+Future<bool> _pressGc(bool Function() until) async {
+  var ballast = <List<int>>[];
+
+  for (var round = 0; round < 100; round++) {
+    if (until()) return true;
+
+    final held = <List<int>>[];
+    for (var block = 0; block < 64; block++) {
+      held.add(List<int>.filled(1 << 12, round + ballast.length));
+    }
+    ballast = held;
+
+    await Future<void>.delayed(Duration.zero);
+  }
+
+  return until();
 }
 
 Future<FfiCaptureSession> _session({
@@ -266,6 +323,52 @@ void main() {
     expect(() => session.feedSynthetic(Int16List(512)), throwsStateError);
     // Idempotent: a double destroy would corrupt the heap.
     await session.dispose();
+  });
+
+  group('a session dropped without dispose', () {
+    // dispose() is still the contract. This is the backstop under it: a session
+    // holds the C struct, two lock-free rings, the take history, the two drain
+    // buffers *and* an open input device, so a consumer that forgets would
+    // otherwise leave the microphone live for the life of the process.
+    test('is destroyed by the finalizer rather than leaked', () async {
+      final before = bindings.wfCaptureLive();
+
+      final live = await _openAndDrop(4);
+      expect(
+        live,
+        before + 4,
+        reason: 'four undisposed sessions should have been live in there',
+      );
+
+      final reclaimed = await _pressGc(
+        () => bindings.wfCaptureLive() == before,
+      );
+
+      expect(
+        reclaimed,
+        isTrue,
+        reason:
+            'dropping a session must eventually destroy it: '
+            '${bindings.wfCaptureLive() - before} still live',
+      );
+    });
+
+    test('is not destroyed twice when it was disposed first', () async {
+      // dispose() detaches. Without that the finalizer comes back for a pointer
+      // already freed, and a double destroy is a corrupt heap rather than a
+      // failed expectation - so the count dropping *below* baseline is the
+      // gentlest way this can fail, and an abort is the likelier one.
+      final before = bindings.wfCaptureLive();
+
+      expect(
+        await _openDisposeAndDrop(4),
+        before,
+        reason: 'dispose() should have destroyed each one already',
+      );
+
+      await _pressGc(() => false);
+      expect(bindings.wfCaptureLive(), before);
+    });
   });
 
   group('recording to a file', () {
