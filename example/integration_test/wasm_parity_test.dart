@@ -45,7 +45,7 @@ void main() {
   testWidgets('the WASM core reports the same ABI as the native core', (
     tester,
   ) async {
-    expect(MonowavePlatform.instance.abiVersion(), 11);
+    expect(MonowavePlatform.instance.abiVersion(), 12);
   });
 
   testWidgets('the WASM core reduces identically to the native core', (

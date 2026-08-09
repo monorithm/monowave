@@ -22,7 +22,7 @@ extern "C" {
 #endif
 
 // Bumped whenever a signature below changes. Dart asserts on it at startup.
-#define WF_ABI_VERSION 11
+#define WF_ABI_VERSION 12
 
 // Cap on pyramid depth. 24 levels at a 128-sample base covers a bit over a
 // billion samples per pair - far past any real recording.
@@ -282,6 +282,16 @@ WF_EXPORT int32_t wf_render_read(wf_render *render, int16_t *out,
 /// 1152 samples and then decodes forward.
 WF_EXPORT int32_t wf_render_seek(wf_render *render, double output_frame);
 
+/// Replaces the region list, keeping the source open.
+///
+/// The new list is copied before the old one is released, so a failed
+/// allocation leaves the render playing exactly what it was playing. The read
+/// position is rewound, because a position measured against one list means
+/// nothing against another - the caller seeks afterwards.
+WF_EXPORT int32_t wf_render_set_regions(wf_render *render,
+                                        const wf_region *regions,
+                                        int32_t region_count);
+
 // --- Playback ---------------------------------------------------------------
 
 /// A render being fed through a lock-free ring to an audio device.
@@ -356,6 +366,21 @@ WF_EXPORT double wf_playback_length_frames(const wf_playback *playback);
 /// WF_ERR_STATE if the other two sides do not stand down, in which case nothing
 /// moves and playback carries on where it was.
 WF_EXPORT int32_t wf_playback_seek(wf_playback *playback, double output_frame);
+
+/// Swaps the region list underneath a running playback.
+///
+/// This is what lets a listener drag a trim handle and hear the result without
+/// playback stopping. Mechanically it is a seek with a new list: the same
+/// handshake takes the ring, the list is replaced, and the playhead keeps its
+/// output frame so the sound carries on from where it was rather than jumping.
+/// A change that shortens the document below the playhead clamps to the new end.
+///
+/// Whatever the ring had queued is discarded, because it was rendered through
+/// the old list. That is true even for a change of gain alone, which is why
+/// there is one call here rather than two.
+WF_EXPORT int32_t wf_playback_set_regions(wf_playback *playback,
+                                          const wf_region *regions,
+                                          int32_t region_count);
 
 /// Opens an output device and starts pulling. WF_ERR_DEVICE when there is no
 /// device, which is the normal answer in CI.

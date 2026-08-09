@@ -365,11 +365,16 @@ class FakePlaybackSession implements PlaybackSession {
   /// The rate [duration] and [position] are expressed against.
   final int sampleRate;
 
+  /// Mutable, like the rest of this fake. [setDocument] assigns it, and a test
+  /// may set it directly to stage a starting state.
   @override
-  final WaveformDocument document;
+  WaveformDocument document;
 
   /// Every seek requested, in order.
   final List<Duration> seeks = [];
+
+  /// Every document swapped in, in order.
+  final List<WaveformDocument> documents = [];
 
   int playCount = 0;
   int pauseCount = 0;
@@ -432,6 +437,18 @@ class FakePlaybackSession implements PlaybackSession {
     _position = position < Duration.zero
         ? Duration.zero
         : (position > duration ? duration : position);
+  }
+
+  @override
+  Future<void> setDocument(WaveformDocument document) async {
+    if (_disposed) throw StateError('This playback session was disposed.');
+
+    documents.add(document);
+    this.document = document;
+
+    // The playhead keeps its output position and clamps to the new end, which
+    // is what the real session does.
+    if (_position > duration) _position = duration;
   }
 
   /// Moves the playhead, as a device consuming frames would. Stops at the end.

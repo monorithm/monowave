@@ -329,48 +329,84 @@ int32_t wf_playback_pull(wf_playback *playback, int16_t *out, int32_t frames) {
   return available / channels;
 }
 
-int32_t wf_playback_seek(wf_playback *playback, double output_frame) {
-  if (playback == NULL) return WF_ERR_ARGUMENT;
-
+/// Takes the ring away from the feeder and the consumer, so it can be reset.
+///
+/// Raises `seeking`, which makes the consumer emit silence and the feeder park,
+/// then waits for both to say they are out. Returns whether it got there.
+///
+/// The caller is a control thread and can afford to block for a few
+/// milliseconds. Neither of the other two can, which is the whole reason the
+/// waiting happens on this side.
+static int wf_playback_acquire(wf_playback *playback) {
   atomic_store(&playback->seeking, 1);
 
-  // Wait for exclusive access to the ring. The consumer leaves `pull` within
-  // one buffer and the feeder parks within a poll, so this is milliseconds. The
-  // caller is a control thread and can afford it; neither of the other two can,
-  // which is the whole reason the waiting happens here.
-  int exclusive = 0;
-  for (int spin = 0; spin < 5000 && !exclusive; spin++) {
-    exclusive =
-        !atomic_load(&playback->pulling) && atomic_load(&playback->parked);
-    if (!exclusive) wf_sleep_ms(1);
+  for (int spin = 0; spin < 5000; spin++) {
+    if (!atomic_load(&playback->pulling) && atomic_load(&playback->parked)) {
+      return 1;
+    }
+    wf_sleep_ms(1);
   }
 
-  if (!exclusive) {
-    // Five seconds without both sides standing down means one of them is
-    // wedged. Resetting the ring anyway would corrupt it under whoever is
-    // still in there, so the seek fails instead and playback carries on.
-    atomic_store(&playback->seeking, 0);
-    return WF_ERR_STATE;
-  }
+  // Five seconds without both sides standing down means one of them is wedged.
+  // Resetting the ring anyway would corrupt it under whoever is still in there.
+  atomic_store(&playback->seeking, 0);
+  return 0;
+}
 
-  // Clamp here as well as in wf_render_seek, because the playhead is set from
-  // this value. Seeking an hour into a four-second document must leave the
-  // position at the end of the document, not an hour in.
-  double target = output_frame;
-  const double length = wf_render_length_frames(playback->render);
-  if (!(target >= 0.0)) target = 0.0;  // also catches NaN
-  if (target > length) target = length;
-
-  const int32_t status = wf_render_seek(playback->render, target);
-
-  // Nobody is in the ring now, so it can simply be emptied.
+/// Empties the ring, puts the playhead at `frame`, and lets the other two back
+/// in. Only valid between wf_playback_acquire and here.
+static void wf_playback_release(wf_playback *playback, double frame) {
   atomic_store_explicit(&playback->head, 0, memory_order_relaxed);
   atomic_store_explicit(&playback->tail, 0, memory_order_relaxed);
-  atomic_store_explicit(&playback->consumed, (long long)target,
+  atomic_store_explicit(&playback->consumed, (long long)frame,
                         memory_order_relaxed);
   atomic_store_explicit(&playback->drained, 0, memory_order_release);
-
   atomic_store(&playback->seeking, 0);
+}
+
+/// Clamps an output frame into the render, treating NaN as zero.
+static double wf_playback_clamp(const wf_playback *playback, double frame) {
+  const double length = wf_render_length_frames(playback->render);
+  if (!(frame >= 0.0)) return 0.0;
+  return frame > length ? length : frame;
+}
+
+int32_t wf_playback_seek(wf_playback *playback, double output_frame) {
+  if (playback == NULL) return WF_ERR_ARGUMENT;
+  if (!wf_playback_acquire(playback)) return WF_ERR_STATE;
+
+  // Clamped here as well as inside wf_render_seek, because the playhead is set
+  // from this value. Seeking an hour into a four-second document must leave the
+  // position at the end of the document, not an hour in.
+  const double target = wf_playback_clamp(playback, output_frame);
+  const int32_t status = wf_render_seek(playback->render, target);
+
+  wf_playback_release(playback, target);
+  return status;
+}
+
+int32_t wf_playback_set_regions(wf_playback *playback,
+                                const wf_region *regions,
+                                int32_t region_count) {
+  if (playback == NULL) return WF_ERR_ARGUMENT;
+  if (!wf_playback_acquire(playback)) return WF_ERR_STATE;
+
+  // The playhead is an output frame, and it keeps its meaning across the swap:
+  // a listener dragging a trim handle expects the sound to carry on from where
+  // it was, not to jump. A change that shortens the document below the playhead
+  // clamps to the new end.
+  const double at =
+      (double)atomic_load_explicit(&playback->consumed, memory_order_relaxed);
+
+  int32_t status =
+      wf_render_set_regions(playback->render, regions, region_count);
+
+  // On failure the render still holds the old list, so putting the playhead
+  // back where it was leaves playback exactly as it found it.
+  const double target = wf_playback_clamp(playback, at);
+  if (status == WF_OK) status = wf_render_seek(playback->render, target);
+
+  wf_playback_release(playback, target);
   return status;
 }
 

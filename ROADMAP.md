@@ -242,21 +242,44 @@ samples. That is pure maths over a sample rate and needs no walk.
 
 ---
 
-## M9 - Live document updates
+## M9 - Live document updates: done
 
 The feature that justifies the work: drag a trim handle, hear the result, and
 never stop playback.
 
-- Support a document swap during playback.
-- Separate two kinds of change. A feeder swap changes gain or fades. A timeline
-  change is a trim, a delete or a split, and it is a seek in disguise.
+- `PlaybackSession.setDocument` swaps the region list underneath a running
+  session.
+- The playhead keeps its output position and clamps to the new end.
+
+Status: 7 more tests in `test/transport_test.dart`, and the full suite is at
+201.
 
 **Exit criterion.** Change a document mid-playback. Assert that the output after
 the change matches a fresh render of the new document from that offset. Assert
 that the underrun count is still zero.
 
-Whether the two kinds of change share one API call is an open question, and it
-belongs to this milestone rather than before it.
+### The open question, answered: one call, not two
+
+This page asked whether a feeder swap (gain, fades) and a timeline change (a
+trim, a delete, a split) should be separate calls, on the theory that the first
+is cheaper.
+
+They are not. Both throw away whatever the ring had queued, because those frames
+were rendered through the old document, and the ring holds about a second. A
+change of gain alone is exactly as expensive as a trim, so a second entry point
+would buy a caller nothing but a decision to get wrong.
+
+What the two kinds do differ in is what the playhead *means* afterwards, and
+that is not something the API can decide. A gain change leaves output frame N
+pointing at the same audio. A trim that moves a region start does not. So
+`setDocument` keeps the playhead where it is - which is what a listener dragging
+a handle expects - and a host that wants otherwise calls `seek` immediately
+after.
+
+Mechanically the swap is a seek with a new region list, so it reuses the M8
+handshake unchanged. That is also why `wf_playback_seek` and
+`wf_playback_set_regions` now share `wf_playback_acquire` and
+`wf_playback_release`.
 
 ---
 

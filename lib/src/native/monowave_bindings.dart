@@ -363,6 +363,15 @@ external int wfPlaybackChannels(Pointer<WfPlayback> playback);
 )
 external double wfPlaybackLengthFrames(Pointer<WfPlayback> playback);
 
+@Native<Int32 Function(Pointer<WfPlayback>, Pointer<WfRegion>, Int32)>(
+  symbol: 'wf_playback_set_regions',
+)
+external int wfPlaybackSetRegions(
+  Pointer<WfPlayback> playback,
+  Pointer<WfRegion> regions,
+  int regionCount,
+);
+
 @Native<Int32 Function(Pointer<WfPlayback>, Double)>(symbol: 'wf_playback_seek')
 external int wfPlaybackSeek(Pointer<WfPlayback> playback, double outputFrame);
 

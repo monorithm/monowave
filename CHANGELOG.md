@@ -111,8 +111,37 @@ system, so the adapter stays the few lines a host writes.
 This is M8. Live document updates are M9 and web playback is M10; see
 [ROADMAP.md](ROADMAP.md).
 
+### Added: swap a document while it plays
+
+`PlaybackSession.setDocument` replaces the region list underneath a running
+session. Drag a trim handle, change a gain, and hear the result without playback
+stopping. This is the feature the whole playback path exists for.
+
+The playhead keeps its position in the output timeline, so the sound carries on
+from where it was rather than jumping, and a change that shortens the document
+below the playhead clamps to the new end. A host that wants different behaviour
+calls `seek` straight after.
+
+**One call rather than two.** The roadmap left open whether a gain change and a
+trim should be separate entry points, on the theory that the first is cheaper.
+It is not: both discard whatever the ring had queued, because those frames were
+rendered through the old document, and the ring holds about a second. A second
+entry point would buy a caller nothing but a decision to get wrong.
+
+Mechanically a swap is a seek with a new region list, so it reuses the seek
+handshake from M8 unchanged.
+
+- `FakePlaybackSession.setDocument` records every swap and clamps the same way,
+  and a test asserts the two agree.
+- A rejected swap leaves the old document playing. The new list is copied in C
+  before the old one is released, so a failed allocation changes nothing.
+
+This is M9. Web playback is M10; see [ROADMAP.md](ROADMAP.md).
+
 ### Changed
 
+- **ABI 11 → 12.** Additive: `wf_render_set_regions` and
+  `wf_playback_set_regions`.
 - **ABI 10 → 11.** Additive: `wf_render_seek` and `wf_playback_seek`.
 - **ABI 9 → 10.** Additive: the `wf_playback_*` surface. No existing signature
   changed.

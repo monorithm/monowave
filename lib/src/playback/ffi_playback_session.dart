@@ -21,9 +21,10 @@ import 'playback_session.dart';
 class FfiPlaybackSession implements PlaybackSession, Finalizable {
   FfiPlaybackSession._(
     Pointer<bindings.WfPlayback> playback,
-    this.document,
+    WaveformDocument document,
     this._sampleRate,
-  ) : _playback = playback {
+  ) : _playback = playback,
+      _document = document {
     _finalizer.attach(this, playback.cast(), detach: this);
   }
 
@@ -96,7 +97,8 @@ class FfiPlaybackSession implements PlaybackSession, Finalizable {
   final int _sampleRate;
 
   @override
-  final WaveformDocument document;
+  WaveformDocument get document => _document;
+  WaveformDocument _document;
 
   bool _playing = false;
   bool _disposed = false;
@@ -165,6 +167,44 @@ class FfiPlaybackSession implements PlaybackSession, Finalizable {
     );
     if (code != 0) {
       throw PlaybackUnavailable('The seek did not complete (code $code).');
+    }
+  }
+
+  @override
+  Future<void> setDocument(WaveformDocument document) async {
+    _assertUsable();
+    if (document.isEmpty) {
+      throw const PlaybackUnavailable(
+        'There is nothing to play: the document has no regions.',
+      );
+    }
+
+    final regions = calloc<bindings.WfRegion>(document.regions.length);
+    try {
+      for (var i = 0; i < document.regions.length; i++) {
+        final region = document.regions[i];
+        regions[i]
+          ..sourceStart = region.sourceStart.toDouble()
+          ..sourceEnd = region.sourceEnd.toDouble()
+          ..gain = region.gain
+          ..fadeIn = region.fadeIn
+          ..fadeOut = region.fadeOut;
+      }
+
+      final code = bindings.wfPlaybackSetRegions(
+        _playback,
+        regions,
+        document.regions.length,
+      );
+      if (code != 0) {
+        throw PlaybackUnavailable('The document swap failed (code $code).');
+      }
+
+      // Only after the C side accepted it, so a failed swap leaves this
+      // reporting the document that is actually playing.
+      _document = document;
+    } finally {
+      calloc.free(regions);
     }
   }
 

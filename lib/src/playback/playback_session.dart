@@ -57,6 +57,22 @@ abstract interface class PlaybackSession {
   /// of the old position.
   Future<void> seek(Duration position);
 
+  /// Swaps the document underneath a running session.
+  ///
+  /// This is the point of the whole playback path: drag a trim handle, change a
+  /// gain, and hear the result without playback stopping.
+  ///
+  /// The playhead keeps its position in the output timeline, so the sound
+  /// carries on from where it was rather than jumping. A change that shortens
+  /// the document below the playhead clamps to the new end. A host that wants
+  /// different behaviour can [seek] straight afterwards.
+  ///
+  /// One call rather than two, because both kinds of change cost the same
+  /// thing. Whatever was queued ahead of the playhead was rendered through the
+  /// old document and has to go, and that is as true of a gain change as of a
+  /// trim.
+  Future<void> setDocument(WaveformDocument document);
+
   Future<void> dispose();
 }
 

@@ -217,6 +217,37 @@ double wf_render_length_frames(const wf_render *render) {
   return render == NULL ? 0.0 : (double)render->length;
 }
 
+int32_t wf_render_set_regions(wf_render *render, const wf_region *regions,
+                              int32_t region_count) {
+  if (render == NULL || regions == NULL || region_count <= 0) {
+    return WF_ERR_ARGUMENT;
+  }
+
+  wf_region *copy =
+      (wf_region *)calloc((size_t)region_count, sizeof(wf_region));
+  if (copy == NULL) return WF_ERR_MEMORY;
+  memcpy(copy, regions, (size_t)region_count * sizeof(wf_region));
+
+  // Swapped in only once the new list exists, so a failed allocation leaves the
+  // render playing exactly what it was playing.
+  free(render->regions);
+  render->regions = copy;
+  render->region_count = region_count;
+
+  render->length = 0;
+  for (int32_t index = 0; index < region_count; index++) {
+    render->length += wf_region_frames(&regions[index]);
+  }
+
+  // A position means nothing against a list it was not measured on, so this
+  // rewinds and leaves the caller to seek where it wants to be.
+  render->index = 0;
+  render->offset = 0;
+  render->seek_pending = 1;
+  render->failed = 0;
+  return WF_OK;
+}
+
 int32_t wf_render_seek(wf_render *render, double output_frame) {
   if (render == NULL) return WF_ERR_ARGUMENT;
 
@@ -419,6 +450,14 @@ int32_t wf_render_channels(const wf_render *render) {
 double wf_render_length_frames(const wf_render *render) {
   (void)render;
   return 0.0;
+}
+
+int32_t wf_render_set_regions(wf_render *render, const wf_region *regions,
+                              int32_t region_count) {
+  (void)render;
+  (void)regions;
+  (void)region_count;
+  return WF_ERR_OPEN;
 }
 
 int32_t wf_render_seek(wf_render *render, double output_frame) {

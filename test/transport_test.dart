@@ -314,6 +314,186 @@ void main() {
     });
   });
 
+  group('swapping the document while it plays', () {
+    // The M9 exit criterion, and the feature the whole playback path exists
+    // for: drag a trim handle, hear the result, never stop.
+    //
+    // Every case here checks the same thing - that what comes out after the
+    // swap is what a fresh render of the new document gives at that offset -
+    // because a swap that keeps playing the old audio for a second is exactly
+    // the bug worth catching, and the ring holds about a second.
+
+    /// Pulls [blocks] blocks and returns them as one buffer.
+    Int16List drain(FfiPlaybackSession session, int blocks) {
+      final out = <int>[];
+      for (var i = 0; i < blocks; i++) {
+        _waitForRing(session, _block);
+        out.addAll(session.pullSynthetic(_block));
+      }
+      return Int16List.fromList(out);
+    }
+
+    test('a gain change is heard from the playhead on', () async {
+      const before = WaveformDocument([
+        WaveformRegion(sourceStart: 0, sourceEnd: _frames),
+      ]);
+      const after = WaveformDocument([
+        WaveformRegion(sourceStart: 0, sourceEnd: _frames, gain: 0.25),
+      ]);
+
+      final session = await open(before);
+      final played = drain(session, 4);
+      final at = session.position;
+
+      await session.setDocument(after);
+
+      // The playhead does not move: a gain change leaves the timeline alone.
+      expect(session.position, at);
+      expect(session.document, same(after));
+
+      final rendered = await platform.renderPcm(
+        sourcePath: sourcePath,
+        document: after,
+      );
+      final from = played.length;
+
+      expect(
+        drain(session, 4),
+        orderedEquals(rendered.sublist(from, from + 4 * _block)),
+        reason: 'the queued audio was still at the old gain',
+      );
+      expect(session.underruns, 0);
+    });
+
+    test('a fade change is heard from the playhead on', () async {
+      const before = WaveformDocument([
+        WaveformRegion(sourceStart: 0, sourceEnd: _frames),
+      ]);
+      const after = WaveformDocument([
+        WaveformRegion(
+          sourceStart: 0,
+          sourceEnd: _frames,
+          fadeIn: 40000,
+          fadeOut: 40000,
+        ),
+      ]);
+
+      final session = await open(before);
+      final played = drain(session, 3);
+      await session.setDocument(after);
+
+      final rendered = await platform.renderPcm(
+        sourcePath: sourcePath,
+        document: after,
+      );
+      final from = played.length;
+
+      expect(
+        drain(session, 3),
+        orderedEquals(rendered.sublist(from, from + 3 * _block)),
+      );
+      expect(session.underruns, 0);
+    });
+
+    test('a trim moves the timeline under the playhead', () async {
+      // The region start moves, so output frame N now points at different
+      // source audio. The playhead keeps its output position, which is what a
+      // listener dragging the left handle expects.
+      const before = WaveformDocument([
+        WaveformRegion(sourceStart: 0, sourceEnd: _frames),
+      ]);
+      const after = WaveformDocument([
+        WaveformRegion(sourceStart: 30000, sourceEnd: _frames),
+      ]);
+
+      final session = await open(before);
+      final played = drain(session, 4);
+      final at = session.position;
+
+      await session.setDocument(after);
+      expect(session.position, at, reason: 'the playhead should not jump');
+
+      final rendered = await platform.renderPcm(
+        sourcePath: sourcePath,
+        document: after,
+      );
+      final from = played.length;
+
+      expect(
+        drain(session, 4),
+        orderedEquals(rendered.sublist(from, from + 4 * _block)),
+      );
+      expect(session.underruns, 0);
+    });
+
+    test('adding a region extends what is left to play', () async {
+      const before = WaveformDocument([
+        WaveformRegion(sourceStart: 0, sourceEnd: 20000),
+      ]);
+      const after = WaveformDocument([
+        WaveformRegion(sourceStart: 0, sourceEnd: 20000),
+        WaveformRegion(sourceStart: 60000, sourceEnd: 90000, gain: 0.7),
+      ]);
+
+      final session = await open(before);
+      expect(session.duration.inMicroseconds, closeTo(453514, 2));
+
+      await session.setDocument(after);
+
+      expect(session.duration.inMicroseconds, closeTo(1133786, 2));
+      expect(session.isFinished, isFalse);
+    });
+
+    test('shortening below the playhead clamps to the new end', () async {
+      const before = WaveformDocument([
+        WaveformRegion(sourceStart: 0, sourceEnd: _frames),
+      ]);
+      const after = WaveformDocument([
+        WaveformRegion(sourceStart: 0, sourceEnd: 1000),
+      ]);
+
+      final session = await open(before);
+      drain(session, 8); // well past frame 1000
+
+      await session.setDocument(after);
+
+      expect(session.position, session.duration);
+      expect(session.pullSynthetic(_block), isEmpty);
+      _waitForFinished(session);
+    });
+
+    test('refuses an empty document and keeps playing the old one', () async {
+      final session = await open();
+
+      await expectLater(
+        session.setDocument(const WaveformDocument([])),
+        throwsA(isA<PlaybackUnavailable>()),
+      );
+
+      expect(session.document, same(_document));
+      _waitForRing(session, _block);
+      expect(session.pullSynthetic(_block), hasLength(_block));
+    });
+
+    test('the fake swaps the same way', () async {
+      const after = WaveformDocument([
+        WaveformRegion(sourceStart: 0, sourceEnd: 1000),
+      ]);
+      final fake = FakePlaybackSession(document: _document);
+
+      fake.advance(const Duration(seconds: 2));
+      await fake.setDocument(after);
+
+      expect(fake.documents, [same(after)]);
+      expect(fake.document, same(after));
+      expect(
+        fake.position,
+        fake.duration,
+        reason: 'shortening below the playhead clamps, as the real one does',
+      );
+    });
+  });
+
   group('the fake', () {
     // The third exit criterion. A host that builds a scrubber against the fake
     // must not discover a different contract against a real device.

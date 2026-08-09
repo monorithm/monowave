@@ -13,7 +13,7 @@ void main() {
   test('resolves to the native core by default', () async {
     await MonowavePlatform.instance.ensureInitialized();
 
-    expect(MonowavePlatform.instance.abiVersion(), 11);
+    expect(MonowavePlatform.instance.abiVersion(), 12);
   });
 
   // The fake counts rather than dedupes on purpose: a host that initializes on
@@ -43,7 +43,7 @@ void main() {
     expect(MonowavePlatform.instance.abiVersion(), 99);
 
     FakeMonowavePlatform.uninstall();
-    expect(MonowavePlatform.instance.abiVersion(), 11);
+    expect(MonowavePlatform.instance.abiVersion(), 12);
   });
 
   test('a disposed fake session still answers its counters', () async {
