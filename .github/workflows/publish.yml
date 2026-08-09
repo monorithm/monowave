@@ -122,6 +122,12 @@ jobs:
   publish:
     needs: verify
     runs-on: ubuntu-latest
+    # A backstop, not a fix. `pub publish` with no credential does not fail: it
+    # prints a Google OAuth URL whose redirect is localhost *on the runner* and
+    # waits, which nobody can ever satisfy. Left alone it holds a runner until
+    # the six-hour ceiling. The step below is what stops it happening; this is
+    # what bounds it if something else ever does.
+    timeout-minutes: 15
     # Gated on a GitHub environment with required reviewers: once automated
     # publishing is enabled, a tag push is enough to release, so the approval
     # is the last human checkpoint before an irreversible upload.
@@ -148,6 +154,32 @@ jobs:
       - run: flutter pub get
 
       # With `id-token: write` GitHub injects ACTIONS_ID_TOKEN_REQUEST_URL and
-      # ACTIONS_ID_TOKEN_REQUEST_TOKEN, which pub detects and exchanges with
-      # pub.dev on its own. Nothing to configure, no secret to rotate.
+      # ACTIONS_ID_TOKEN_REQUEST_TOKEN -- but the pub client does NOT go looking
+      # for them. That exchange is done by `dart-lang/setup-dart`, which this
+      # workflow deliberately does not use because it provisions the Dart SDK
+      # alone and this package needs Flutter's. So the token has to be minted
+      # here, by hand, or `pub publish` finds no credential and falls back to
+      # interactive OAuth -- printing a localhost redirect URL nobody outside
+      # the runner can reach, and waiting there forever. That is exactly how
+      # 0.3.1's first publish attempt hung.
+      #
+      # Still no secret to rotate: the token is minted per run from the
+      # workflow's own identity and is worthless outside it.
+      - name: Mint a pub.dev credential from the workflow's OIDC identity
+        run: |
+          PUB_TOKEN="$(curl -sSf \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://pub.dev" \
+            | jq -r '.value')"
+          if [ -z "$PUB_TOKEN" ] || [ "$PUB_TOKEN" = "null" ]; then
+            echo "::error::Could not mint an OIDC token for pub.dev. Check that the publish job still has id-token: write."
+            exit 1
+          fi
+          echo "::add-mask::$PUB_TOKEN"
+          echo "PUB_TOKEN=$PUB_TOKEN" >>"$GITHUB_ENV"
+          dart pub token add https://pub.dev --env-var PUB_TOKEN
+
+      # Fails rather than prompts if the credential is rejected, which is what
+      # pub.dev does when the package's Automated publishing settings do not
+      # name this repository and a tag pattern matching `v{{version}}`.
       - run: flutter pub publish --force
