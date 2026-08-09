@@ -69,6 +69,42 @@ visualizer read one while tearing down would have passed its widget tests and
 then read freed memory against a real microphone. `isRecording` and `isPaused`
 are now false after disposal too, on both the real session and the fake.
 
+### Fixed: `peaks.rms(level)` was null on web, and only on web
+
+RMS landed in 0.3.0 and reached five of the six targets. `wf_peaks_rms` was
+never added to `-sEXPORTED_FUNCTIONS` in `tool/build_wasm.sh`, the `_Core`
+extension type in `lib/src/platform/wasm_platform.dart` never declared it, and
+`_copyOut` built its `WaveformPeaks` without an `rms:` argument - so on web
+every level answered null while the same C source, over `dart:ffi`, returned
+the series. A two-layer waveform lost its core on the one target that could not
+be checked against a digest, and the package's claim to be byte-identical
+everywhere was, for that release, not true.
+
+All three are fixed, and the artifact did not have to change: `WF_EXPORT` marks
+the symbol `visibility("default")`, so `wf_peaks_rms` was in the committed
+`assets/monowave.wasm` export table the whole time. Nothing was missing from the
+binary. What was missing was anything that looked.
+
+**The determinism check now covers it, because it did not.** The FNV-1a digest
+in `test/fixtures.dart` hashed the min/max levels alone, so the one check whose
+job is to prove the two bindings agree was blind to an entire series - it stayed
+green through the whole of 0.3.0. It now takes a `WaveformPeaks` and folds in
+both series at every level, and it throws rather than skipping when a level has
+no RMS, since a binding that never read the series is exactly what it exists to
+catch. `tool/verify_wasm.mjs` folds the same two series in the same order. The
+pinned digests all move as a result; regenerate with
+`dart run tool/print_digests.dart`.
+
+Three checks now stand between this and a repeat, one per way it broke.
+`tool/verify_wasm.mjs` asserts every function `_Core` declares is present in the
+artifact, named in `-sEXPORTED_FUNCTIONS`, and actually called by the binding. A
+member the extension type does not declare is a compile error, which is what
+extension types are here for. And the browser test in
+`example/test/web_wasm_test.dart` decodes through the real web binding and
+asserts the RMS series arrives - the one leg neither of the others can see,
+since a `_copyOut` that reads a series and then drops it on the floor compiles
+and exports perfectly.
+
 ### Changed
 
 - **ABI 7 → 8.** Additive: `wf_capture_scratch`, `wf_capture_scratch_frames`,

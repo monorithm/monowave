@@ -8,6 +8,8 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:monowave/monowave.dart' show WaveformPeaks;
+
 /// Writes 16-bit PCM samples into a canonical 44-byte WAV container.
 Uint8List wav(Int16List samples, {int sampleRate = 44100, int channels = 1}) {
   final dataBytes = samples.length * 2;
@@ -121,9 +123,15 @@ Map<String, Uint8List> all() => {
   'stereo': wav(stereo(), channels: 2),
 };
 
-/// FNV-1a (32-bit) over the pyramid's values.
+/// FNV-1a (32-bit) over everything the pyramid holds.
 ///
-/// Two details matter, and both were bugs first.
+/// Three details matter, and all three were bugs first.
+///
+/// It covers *both* series at every level - the interleaved min/max pairs and
+/// the RMS beside them. A digest over less than the pyramid is a determinism
+/// check with a hole in it, and this one had exactly that hole: hashing only
+/// min/max is how 0.3.0 shipped a web build whose `rms` was null on every level
+/// while this check stayed green on every target.
 ///
 /// It hashes the int16 *values* in explicit little-endian order rather than a
 /// byte view of the list, so the result does not depend on the host's
@@ -133,7 +141,7 @@ Map<String, Uint8List> all() => {
 /// because Dart integers are 64-bit on the VM but doubles on web. A 64-bit FNV
 /// silently produces different numbers under `dart2js`, which would make this
 /// check meaningless on the one target it exists to police.
-String digest(List<Int16List> levels) {
+String digest(WaveformPeaks peaks) {
   var hash = 0x811c9dc5;
 
   void mix(int byte) {
@@ -148,12 +156,29 @@ String digest(List<Int16List> levels) {
         0xFFFFFFFF;
   }
 
-  for (final level in levels) {
-    for (final value in level) {
+  void mixSeries(Int16List values) {
+    for (final value in values) {
       final unsigned = value & 0xFFFF;
       mix(unsigned & 0xFF);
       mix((unsigned >> 8) & 0xFF);
     }
+  }
+
+  for (var level = 0; level < peaks.levels; level++) {
+    mixSeries(peaks.view(level));
+
+    // Throwing rather than skipping. A binding that never read the series hands
+    // back null here, and that is precisely the drift this digest exists to
+    // catch - so it must not be able to hash the peaks alone and report a
+    // match.
+    final rms = peaks.rms(level);
+    if (rms == null) {
+      throw StateError(
+        'Level $level carries no RMS. The C core always computes one, so a '
+        'pyramid without it is a binding that is not reading it.',
+      );
+    }
+    mixSeries(rms);
   }
 
   return hash.toRadixString(16).padLeft(8, '0');
