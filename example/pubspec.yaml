@@ -58,6 +58,15 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
 
+  # Drives the web binding in a real browser. `flutter test --platform chrome`
+  # cannot: its harness serves the compiled test and nothing else, so
+  # `rootBundle.load` of the WASM artifact never completes -- it does not even
+  # fail, it just hangs until the runner's timeout. `flutter drive` builds and
+  # serves the actual app, assets included, which is the only way the web
+  # binding can reach `assets/monowave.wasm` under test.
+  integration_test:
+    sdk: flutter
+
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
   # activated in the `analysis_options.yaml` file located at the root of your

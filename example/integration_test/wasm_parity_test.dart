@@ -1,30 +1,38 @@
 // Runs the real WASM binding in a real browser:
 //
-//   flutter test --platform chrome test/web_wasm_test.dart
+//   chromedriver --port=4444 &
+//   flutter drive \
+//     --driver=test_driver/integration_test.dart \
+//     --target=integration_test/wasm_parity_test.dart \
+//     -d web-server --browser-name=chrome --headless
 //
-// It lives in the example rather than the package because loading the artifact
-// goes through `rootBundle`, which needs a Flutter asset bundle. This is the
-// test that would catch a drift between `src/` and `assets/monowave.wasm`, or a
-// rename that the extension types cannot see at compile time.
+// It lives here, and not under `test/` as a `flutter test --platform chrome`
+// suite, because that runner cannot load the artifact at all. Its harness
+// serves the compiled test bundle and nothing else, so
+// `rootBundle.load('packages/monowave/assets/monowave.wasm')` never completes -
+// it does not throw, it hangs, and the suite dies on the framework's twelve
+// minute timeout having run no test. That is why this file spent its first few
+// months on a `continue-on-error` job describing itself as unproven: it was not
+// a flaky runner, and it was not local. `flutter drive` builds and serves the
+// example itself, assets included, which is the one arrangement where the web
+// binding can reach the WASM module.
 //
-// NOT YET GREEN LOCALLY. The chrome platform runner hangs with no output on
-// this machine; the same assertions were verified by hand in a browser against
-// the built example. CI is the next place to find out whether that is a local
-// Chrome problem or a real one - treat the `web` job as unproven until it runs.
-@TestOn('browser')
-library;
+// This is the test that catches a drift between `src/` and
+// `assets/monowave.wasm`, a rename the extension types cannot see at compile
+// time, or a `_copyOut` that reads a series out of the heap and then forgets to
+// pass it on.
 
 import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:integration_test/integration_test.dart';
 import 'package:monowave/monowave.dart';
 
 void main() {
-  setUpAll(() async {
-    TestWidgetsFlutterBinding.ensureInitialized();
-    await MonowavePlatform.instance.ensureInitialized();
-  });
+  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(MonowavePlatform.instance.ensureInitialized);
 
   test('the WASM core reports the same ABI as the native core', () {
     expect(MonowavePlatform.instance.abiVersion(), 8);
