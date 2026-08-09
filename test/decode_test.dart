@@ -256,13 +256,18 @@ void main() {
     // match on every platform and in the WASM build. MP3 decodes through
     // floating point, where the last bit can legitimately differ between
     // targets, so it is checked for shape rather than for byte-identity.
+    //
+    // RMS is covered too, and is exact for the same reason: the squares
+    // accumulate in an int64 that is well inside a double's integer range, so
+    // the only rounding in the whole series is one division and one sqrt, both
+    // of which IEEE-754 requires to be correctly rounded everywhere.
     const expected = <String, String>{
-      'sine-sweep': '720dc16e',
-      'silence': 'd68b23a5',
-      'clipping': 'd4977ed6',
-      'dc-offset': '29f990c4',
-      'click': '3c231901',
-      'stereo': 'd9b86891',
+      'sine-sweep': 'dd631b02',
+      'silence': '8ceed215',
+      'clipping': 'eb376b32',
+      'dc-offset': 'f7aab5b1',
+      'click': '8df71abb',
+      'stereo': '1558e6f8',
     };
 
     for (final entry in expected.entries) {
@@ -270,17 +275,16 @@ void main() {
         final peaks = await platform.decodeBytes(fixtures.all()[entry.key]!);
         addTearDown(peaks.dispose);
 
-        final actual = fixtures.digest([
-          for (var l = 0; l < peaks.levels; l++) peaks.view(l),
-        ]);
+        final actual = fixtures.digest(peaks);
 
         expect(
           actual,
           entry.value,
           reason:
-              'The peak pyramid for ${entry.key} changed. If that was '
-              'intentional, regenerate with tool/print_digests.dart; if not, '
-              'the C core is not behaving identically across targets.',
+              'The pyramid for ${entry.key} changed - peaks, RMS, or both. If '
+              'that was intentional, regenerate with tool/print_digests.dart '
+              'and update the copy in tool/verify_wasm.mjs; if not, the C core '
+              'is not behaving identically across targets.',
         );
       });
     }

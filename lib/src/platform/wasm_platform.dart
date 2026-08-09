@@ -89,6 +89,9 @@ extension type _Core._(JSObject _o) implements JSObject {
   @JS('wf_peaks_data')
   external int peaksData(int peaks, int level);
 
+  @JS('wf_peaks_rms')
+  external int peaksRms(int peaks, int level);
+
   @JS('wf_peaks_free')
   external void peaksFree(int peaks);
 
@@ -262,8 +265,8 @@ class WasmMonowavePlatform implements MonowavePlatform {
     '. Decode and rendering work on web today.',
   );
 
-  /// Copies the pyramid out of the WASM heap, unlike the FFI path which views
-  /// it in place.
+  /// Copies both series of the pyramid out of the WASM heap, unlike the FFI
+  /// path which views them in place.
   ///
   /// This is deliberate and it is the one place web pays more than native.
   /// Growing the heap detaches every view over it, so a long-lived view would
@@ -274,17 +277,25 @@ class WasmMonowavePlatform implements MonowavePlatform {
   WaveformPeaks _copyOut(_Core core, int peaks, int baseSamplesPerPixel) {
     final levelCount = core.peaksLevels(peaks);
     final levels = <Int16List>[];
+    final rms = <Int16List>[];
 
     for (var level = 0; level < levelCount; level++) {
-      final pointer = core.peaksData(peaks, level);
-      final values = core.peaksPairCount(peaks, level) * 2;
+      final pairs = core.peaksPairCount(peaks, level);
+
+      final data = core.peaksData(peaks, level);
       levels.add(
-        Int16List.fromList(_heapOf(core).asInt16List(pointer, values)),
+        Int16List.fromList(_heapOf(core).asInt16List(data, pairs * 2)),
       );
+
+      // One value per pair rather than two: RMS is a single series running
+      // alongside the interleaved min/max, not a third and fourth column of it.
+      final loudness = core.peaksRms(peaks, level);
+      rms.add(Int16List.fromList(_heapOf(core).asInt16List(loudness, pairs)));
     }
 
     return WaveformPeaks.fromLevels(
       levels,
+      rms: rms,
       sampleRate: core.peaksSampleRate(peaks),
       channels: core.peaksChannels(peaks),
       lengthInSamples: core.peaksLength(peaks).toInt(),

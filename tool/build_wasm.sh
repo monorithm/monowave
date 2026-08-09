@@ -73,6 +73,11 @@ mkdir -p assets
 # malloc/free are exported because the decode entry point takes a pointer to
 # bytes the caller supplies. M3 will likely need -sMODULARIZE instead, when
 # miniaudio's Web Audio backend arrives and brings JS glue with it.
+#
+# EXPORTED_FUNCTIONS must list everything `lib/src/platform/wasm_platform.dart`
+# calls. `tool/verify_wasm.mjs` asserts exactly that, because the two drifted
+# once: `_wf_peaks_rms` was missing here for the whole of 0.3.0 while the native
+# targets returned RMS, and nothing failed.
 "$EMCC" src/wf_peaks.c src/wf_decode.c src/wf_capture.c src/wf_export.c \
   -O3 \
   -I src \
@@ -81,7 +86,7 @@ mkdir -p assets
   --no-entry \
   -sSTANDALONE_WASM \
   -sALLOW_MEMORY_GROWTH=1 \
-  -sEXPORTED_FUNCTIONS=_wf_abi_version,_wf_reduce_minmax,_wf_decode_memory,_wf_peaks_sample_rate,_wf_peaks_channels,_wf_peaks_length,_wf_peaks_levels,_wf_peaks_base_spp,_wf_peaks_pair_count,_wf_peaks_data,_wf_peaks_free,_malloc,_free \
+  -sEXPORTED_FUNCTIONS=_wf_abi_version,_wf_reduce_minmax,_wf_decode_memory,_wf_peaks_sample_rate,_wf_peaks_channels,_wf_peaks_length,_wf_peaks_levels,_wf_peaks_base_spp,_wf_peaks_pair_count,_wf_peaks_data,_wf_peaks_rms,_wf_peaks_free,_malloc,_free \
   -o "$OUT"
 
 echo "built $OUT ($(wc -c <"$OUT" | tr -d ' ') bytes)"

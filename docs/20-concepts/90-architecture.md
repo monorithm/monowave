@@ -253,6 +253,12 @@ This is the assertion the whole design answers to, and it runs two ways.
 `tool/verify_wasm.mjs` decodes the same fixtures through the WASM module and asserts the same digests.
 Between them, one C source reached over two entirely different bindings on four host platforms has to agree exactly.
 
-The hash is FNV-1a, and two details of it were bugs first.
+The hash is FNV-1a, and three details of it were bugs first.
+It covers *both* series at every level -- the interleaved min/max pairs and the RMS beside them.
+Hashing only the peaks is how 0.3.0 shipped a web build whose `rms` was null on every level while this check stayed green on all six targets, so a digest that covers less than the pyramid is a determinism check with a hole in it.
 It hashes int16 *values* in explicit little-endian order rather than a byte view, so it does not depend on host endianness.
 And it is 32-bit with a shift-decomposed multiply rather than 64-bit, because Dart integers are 64-bit on the VM but doubles on web -- a 64-bit FNV silently produces different numbers under `dart2js`, which would have made the check meaningless on the one target it exists to police.
+
+A digest only sees what a binding asks for, which is why `tool/verify_wasm.mjs` also checks the surface itself.
+Every function the `_Core` extension type declares has to be present in `assets/monowave.wasm`, named in `-sEXPORTED_FUNCTIONS`, and actually called by the binding.
+That is the check that would have caught `wf_peaks_rms` missing from the build's export list, which no amount of hashing could.
