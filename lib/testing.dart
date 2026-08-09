@@ -179,6 +179,28 @@ class FakeMonowavePlatform implements MonowavePlatform {
     return session;
   }
 
+  /// Sessions handed back by [openPlayback], newest last.
+  final List<FakePlaybackSession> playbacks = [];
+
+  /// When set, [openPlayback] throws this instead of opening.
+  Object? nextPlaybackError;
+
+  @override
+  Future<PlaybackSession> openPlayback({
+    required String sourcePath,
+    required WaveformDocument document,
+  }) async {
+    final error = nextPlaybackError;
+    if (error != null) {
+      nextPlaybackError = null;
+      throw error;
+    }
+
+    final session = FakePlaybackSession(document: document, sampleRate: 44100);
+    playbacks.add(session);
+    return session;
+  }
+
   /// Installs this as the platform. Call [uninstall] in `tearDown`.
   void install() => MonowavePlatform.instance = this;
 
@@ -324,5 +346,121 @@ class FakeCaptureSession implements CaptureSession {
     _recording = false;
     _paused = false;
     await _frames.close();
+  }
+}
+
+/// A [PlaybackSession] that never opens an audio device.
+///
+/// The playhead moves when a test calls [advance] rather than when a device
+/// consumes frames, which makes the timing exact instead of merely likely - the
+/// same bargain [FakeCaptureSession] makes for the frame stream.
+///
+/// It answers the same way the real session does where a host can tell the
+/// difference. [position] never runs past [duration], never moves backwards
+/// except on a [seek], and keeps answering after [dispose] rather than
+/// throwing.
+class FakePlaybackSession implements PlaybackSession {
+  FakePlaybackSession({required this.document, this.sampleRate = 44100});
+
+  /// The rate [duration] and [position] are expressed against.
+  final int sampleRate;
+
+  /// Mutable, like the rest of this fake. [setDocument] assigns it, and a test
+  /// may set it directly to stage a starting state.
+  @override
+  WaveformDocument document;
+
+  /// Every seek requested, in order.
+  final List<Duration> seeks = [];
+
+  /// Every document swapped in, in order.
+  final List<WaveformDocument> documents = [];
+
+  int playCount = 0;
+  int pauseCount = 0;
+
+  /// When set, [play] throws this.
+  Object? nextPlayError;
+
+  /// What [underruns] reports.
+  int underrunCount = 0;
+
+  Duration _position = Duration.zero;
+  bool _playing = false;
+  bool _disposed = false;
+
+  @override
+  Duration get duration => Duration(
+    microseconds:
+        (document.lengthInSamples * Duration.microsecondsPerSecond / sampleRate)
+            .round(),
+  );
+
+  @override
+  Duration get position => _position;
+
+  @override
+  bool get isPlaying => _playing;
+
+  @override
+  bool get isFinished => _position >= duration;
+
+  @override
+  int get underruns => underrunCount;
+
+  @override
+  Future<void> play() async {
+    if (_disposed) throw StateError('This playback session was disposed.');
+
+    final error = nextPlayError;
+    if (error != null) {
+      nextPlayError = null;
+      throw error;
+    }
+
+    playCount++;
+    _playing = true;
+  }
+
+  @override
+  Future<void> pause() async {
+    if (_disposed) throw StateError('This playback session was disposed.');
+    pauseCount++;
+    _playing = false;
+  }
+
+  @override
+  Future<void> seek(Duration position) async {
+    if (_disposed) throw StateError('This playback session was disposed.');
+
+    seeks.add(position);
+    _position = position < Duration.zero
+        ? Duration.zero
+        : (position > duration ? duration : position);
+  }
+
+  @override
+  Future<void> setDocument(WaveformDocument document) async {
+    if (_disposed) throw StateError('This playback session was disposed.');
+
+    documents.add(document);
+    this.document = document;
+
+    // The playhead keeps its output position and clamps to the new end, which
+    // is what the real session does.
+    if (_position > duration) _position = duration;
+  }
+
+  /// Moves the playhead, as a device consuming frames would. Stops at the end.
+  void advance(Duration by) {
+    final next = _position + by;
+    _position = next > duration ? duration : next;
+  }
+
+  @override
+  Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
+    _playing = false;
   }
 }

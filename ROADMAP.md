@@ -163,14 +163,35 @@ out of the audio path.
 
 ---
 
-## M8 - Transport
+## M8 - Transport: done
 
 `PlaybackSession`, opened by `MonowavePlatform.openPlayback`, mirroring
 `CaptureSession` and `openCapture`.
 
-- Implement `play`, `pause`, `seek`, `position`, `duration` and `isPlaying`.
-- Take position from the consumed-frame counter of the device.
-- Seek through a generation counter.
+- `play`, `pause`, `seek`, `position`, `duration`, `isPlaying`, `isFinished`
+  and `underruns`.
+- Position comes from the consumed-frame counter of the device.
+- `FakePlaybackSession` in `lib/testing.dart`.
+
+Status: 18 tests in `test/transport_test.dart`, and the full suite is at 194.
+
+**The seek mechanism is a handshake, not a per-frame generation tag.** This page
+sketched a generation counter that the audio callback compares against each
+frame it is about to emit. Doing that literally means storing a generation
+beside every slot in the ring, which is a lot of memory and bookkeeping for a
+rare event.
+
+Instead the party that can afford to wait does the waiting. `wf_playback_seek`
+raises a `seeking` flag, then blocks its own caller until the consumer has left
+the audio callback and the feeder has parked. At that point nobody is touching
+the ring and it can be reset outright. The audio callback emits silence while
+the flag is up, which is the same audible result. If the other two sides do not
+stand down within five seconds the seek fails rather than resetting a ring
+somebody is still inside.
+
+`PlaybackSession` does **not** implement `MonoPlaybackController`. That
+interface lives in monokit, and a headless package must not depend on the design
+system. The adapter is the few lines a host writes.
 
 **Exit criteria**, three of them:
 
@@ -221,21 +242,44 @@ samples. That is pure maths over a sample rate and needs no walk.
 
 ---
 
-## M9 - Live document updates
+## M9 - Live document updates: done
 
 The feature that justifies the work: drag a trim handle, hear the result, and
 never stop playback.
 
-- Support a document swap during playback.
-- Separate two kinds of change. A feeder swap changes gain or fades. A timeline
-  change is a trim, a delete or a split, and it is a seek in disguise.
+- `PlaybackSession.setDocument` swaps the region list underneath a running
+  session.
+- The playhead keeps its output position and clamps to the new end.
+
+Status: 7 more tests in `test/transport_test.dart`, and the full suite is at
+201.
 
 **Exit criterion.** Change a document mid-playback. Assert that the output after
 the change matches a fresh render of the new document from that offset. Assert
 that the underrun count is still zero.
 
-Whether the two kinds of change share one API call is an open question, and it
-belongs to this milestone rather than before it.
+### The open question, answered: one call, not two
+
+This page asked whether a feeder swap (gain, fades) and a timeline change (a
+trim, a delete, a split) should be separate calls, on the theory that the first
+is cheaper.
+
+They are not. Both throw away whatever the ring had queued, because those frames
+were rendered through the old document, and the ring holds about a second. A
+change of gain alone is exactly as expensive as a trim, so a second entry point
+would buy a caller nothing but a decision to get wrong.
+
+What the two kinds do differ in is what the playhead *means* afterwards, and
+that is not something the API can decide. A gain change leaves output frame N
+pointing at the same audio. A trim that moves a region start does not. So
+`setDocument` keeps the playhead where it is - which is what a listener dragging
+a handle expects - and a host that wants otherwise calls `seek` immediately
+after.
+
+Mechanically the swap is a seek with a new region list, so it reuses the M8
+handshake unchanged. That is also why `wf_playback_seek` and
+`wf_playback_set_regions` now share `wf_playback_acquire` and
+`wf_playback_release`.
 
 ---
 

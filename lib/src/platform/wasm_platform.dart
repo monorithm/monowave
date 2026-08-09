@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/services.dart' show rootBundle;
 
 import '../capture/capture_session.dart';
+import '../playback/playback_session.dart';
 import '../edit/waveform_document.dart';
 import '../model/waveform_peaks.dart';
 import 'monowave_platform.dart';
@@ -262,6 +263,16 @@ class WasmMonowavePlatform implements MonowavePlatform {
     'Web has no filesystem to read a source from. Web playback will decode '
     'through the browser and apply the envelope in an AudioWorklet; see '
     'ROADMAP.md, M10.',
+  );
+
+  @override
+  Future<PlaybackSession> openPlayback({
+    required String sourcePath,
+    required WaveformDocument document,
+  }) async => throw const PlaybackUnavailable(
+    'Playback is not implemented on web yet. It will be a WebAudio graph '
+    'rather than a WASM build of the renderer, because playback is a device '
+    'concern and the browser already provides the graph. See ROADMAP.md, M10.',
   );
 
   @override

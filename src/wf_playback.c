@@ -91,11 +91,25 @@ struct wf_playback {
   _Atomic int32_t head;  // written by the feeder only
   _Atomic int32_t tail;  // written by the consumer only
 
-  _Atomic long long consumed;   // frames handed to the consumer
+  _Atomic long long consumed;   // output frames the consumer has taken
   _Atomic long long underruns;  // frames of silence the ring could not cover
   _Atomic int32_t drained;      // the render reached its end
   _Atomic int32_t failed;       // the render reported an error
   _Atomic int32_t stopping;
+
+  // The seek handshake. A seek has to flush a ring that a feeder is filling and
+  // a device is draining, and neither of those may block or take a lock.
+  //
+  // So the party that can afford to wait does the waiting. `wf_playback_seek`
+  // raises `seeking`, then waits until the consumer is out of `pull` and the
+  // feeder has parked. At that point nobody is touching the ring and it can be
+  // reset outright. This is a handshake rather than the per-frame generation
+  // tag the architecture doc sketched, which would have meant a generation
+  // stored beside every slot; the audible behaviour is the same, a few
+  // milliseconds of silence.
+  _Atomic int32_t seeking;
+  _Atomic int32_t pulling;  // the consumer is inside wf_playback_pull
+  _Atomic int32_t parked;   // the feeder is idle and not touching the ring
 
   wf_thread feeder;
   int has_feeder;
@@ -134,6 +148,15 @@ static void wf_feed_loop(wf_playback *playback) {
   }
 
   while (!atomic_load_explicit(&playback->stopping, memory_order_relaxed)) {
+    // Park before anything else. `parked` is the feeder's promise that it is
+    // not inside the ring, and a seek waits on exactly that promise.
+    if (atomic_load(&playback->seeking)) {
+      atomic_store(&playback->parked, 1);
+      wf_sleep_ms(1);
+      continue;
+    }
+    atomic_store(&playback->parked, 0);
+
     if (atomic_load_explicit(&playback->drained, memory_order_relaxed)) {
       wf_sleep_ms(WF_FEED_SLEEP_MS);
       continue;
@@ -259,6 +282,19 @@ int32_t wf_playback_pull(wf_playback *playback, int16_t *out, int32_t frames) {
   const int32_t channels = playback->channels;
   const int32_t want = frames * channels;
 
+  // Announce first, then check. A seek raises `seeking` and then waits for
+  // `pulling` to fall, so this order is what stops the two from passing each
+  // other. Sequential consistency on both sides, because the cost is a handful
+  // of atomics per buffer and the alternative is reasoning about it.
+  atomic_store(&playback->pulling, 1);
+  if (atomic_load(&playback->seeking)) {
+    atomic_store(&playback->pulling, 0);
+    // A seek is in flight and the ring is about to be thrown away. Silence is
+    // the only honest thing to hand the device, and it is not an underrun.
+    memset(out, 0, (size_t)want * sizeof(int16_t));
+    return 0;
+  }
+
   int32_t tail = atomic_load_explicit(&playback->tail, memory_order_relaxed);
   const int32_t head =
       atomic_load_explicit(&playback->head, memory_order_acquire);
@@ -289,7 +325,89 @@ int32_t wf_playback_pull(wf_playback *playback, int16_t *out, int32_t frames) {
 
   atomic_fetch_add_explicit(&playback->consumed, available / channels,
                             memory_order_relaxed);
+  atomic_store(&playback->pulling, 0);
   return available / channels;
+}
+
+/// Takes the ring away from the feeder and the consumer, so it can be reset.
+///
+/// Raises `seeking`, which makes the consumer emit silence and the feeder park,
+/// then waits for both to say they are out. Returns whether it got there.
+///
+/// The caller is a control thread and can afford to block for a few
+/// milliseconds. Neither of the other two can, which is the whole reason the
+/// waiting happens on this side.
+static int wf_playback_acquire(wf_playback *playback) {
+  atomic_store(&playback->seeking, 1);
+
+  for (int spin = 0; spin < 5000; spin++) {
+    if (!atomic_load(&playback->pulling) && atomic_load(&playback->parked)) {
+      return 1;
+    }
+    wf_sleep_ms(1);
+  }
+
+  // Five seconds without both sides standing down means one of them is wedged.
+  // Resetting the ring anyway would corrupt it under whoever is still in there.
+  atomic_store(&playback->seeking, 0);
+  return 0;
+}
+
+/// Empties the ring, puts the playhead at `frame`, and lets the other two back
+/// in. Only valid between wf_playback_acquire and here.
+static void wf_playback_release(wf_playback *playback, double frame) {
+  atomic_store_explicit(&playback->head, 0, memory_order_relaxed);
+  atomic_store_explicit(&playback->tail, 0, memory_order_relaxed);
+  atomic_store_explicit(&playback->consumed, (long long)frame,
+                        memory_order_relaxed);
+  atomic_store_explicit(&playback->drained, 0, memory_order_release);
+  atomic_store(&playback->seeking, 0);
+}
+
+/// Clamps an output frame into the render, treating NaN as zero.
+static double wf_playback_clamp(const wf_playback *playback, double frame) {
+  const double length = wf_render_length_frames(playback->render);
+  if (!(frame >= 0.0)) return 0.0;
+  return frame > length ? length : frame;
+}
+
+int32_t wf_playback_seek(wf_playback *playback, double output_frame) {
+  if (playback == NULL) return WF_ERR_ARGUMENT;
+  if (!wf_playback_acquire(playback)) return WF_ERR_STATE;
+
+  // Clamped here as well as inside wf_render_seek, because the playhead is set
+  // from this value. Seeking an hour into a four-second document must leave the
+  // position at the end of the document, not an hour in.
+  const double target = wf_playback_clamp(playback, output_frame);
+  const int32_t status = wf_render_seek(playback->render, target);
+
+  wf_playback_release(playback, target);
+  return status;
+}
+
+int32_t wf_playback_set_regions(wf_playback *playback,
+                                const wf_region *regions,
+                                int32_t region_count) {
+  if (playback == NULL) return WF_ERR_ARGUMENT;
+  if (!wf_playback_acquire(playback)) return WF_ERR_STATE;
+
+  // The playhead is an output frame, and it keeps its meaning across the swap:
+  // a listener dragging a trim handle expects the sound to carry on from where
+  // it was, not to jump. A change that shortens the document below the playhead
+  // clamps to the new end.
+  const double at =
+      (double)atomic_load_explicit(&playback->consumed, memory_order_relaxed);
+
+  int32_t status =
+      wf_render_set_regions(playback->render, regions, region_count);
+
+  // On failure the render still holds the old list, so putting the playhead
+  // back where it was leaves playback exactly as it found it.
+  const double target = wf_playback_clamp(playback, at);
+  if (status == WF_OK) status = wf_render_seek(playback->render, target);
+
+  wf_playback_release(playback, target);
+  return status;
 }
 
 int32_t wf_playback_available(const wf_playback *playback) {

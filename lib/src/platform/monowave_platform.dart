@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../capture/capture_session.dart';
+import '../playback/playback_session.dart';
 import '../edit/waveform_document.dart';
 import '../model/waveform_peaks.dart';
 
@@ -96,6 +97,18 @@ abstract interface class MonowavePlatform {
   ///
   /// Not available on web, which has no filesystem to read.
   Future<Int16List> renderPcm({
+    required String sourcePath,
+    required WaveformDocument document,
+  });
+
+  /// Opens a playback session over [document], reading from [sourcePath].
+  ///
+  /// What it plays is byte-identical to what [exportWav] would write, because
+  /// both run the same C loop. Hearing an edit before committing to it is only
+  /// useful when what you hear is what you get.
+  ///
+  /// Not available on web, which has no filesystem to read a source from.
+  Future<PlaybackSession> openPlayback({
     required String sourcePath,
     required WaveformDocument document,
   });

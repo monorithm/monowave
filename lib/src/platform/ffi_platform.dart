@@ -7,6 +7,8 @@ import 'package:ffi/ffi.dart';
 import '../capture/capture_session.dart';
 import '../edit/waveform_document.dart';
 import '../capture/ffi_capture_session.dart';
+import '../playback/ffi_playback_session.dart';
+import '../playback/playback_session.dart';
 import '../model/waveform_peaks.dart';
 import '../native/monowave_bindings.dart' as bindings;
 import 'monowave_platform.dart';
@@ -165,6 +167,12 @@ class FfiMonowavePlatform implements MonowavePlatform {
     // source through the same decoders and is seconds of work for a long take.
     return Isolate.run(() => _renderToPcm(sourcePath, regions));
   }
+
+  @override
+  Future<PlaybackSession> openPlayback({
+    required String sourcePath,
+    required WaveformDocument document,
+  }) => FfiPlaybackSession.open(sourcePath: sourcePath, document: document);
 
   @override
   Future<CaptureSession> openCapture([

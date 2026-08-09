@@ -29,6 +29,8 @@ export 'src/model/waveform_peaks.dart' show WaveformPeaks;
 export 'src/model/waveform_selection.dart' show WaveformSelection, WaveformSnap;
 export 'src/model/waveform_timeline.dart' show WaveformTimeline;
 export 'src/model/waveform_viewport.dart' show PeakWindow, WaveformViewport;
+export 'src/playback/playback_session.dart'
+    show PlaybackSession, PlaybackUnavailable;
 export 'src/platform/monowave_platform.dart'
     show
         DecodeFailure,

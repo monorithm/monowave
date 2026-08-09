@@ -75,8 +75,74 @@ This is M7. `PlaybackSession`, seeking and a position clock arrive in M8; see
 - Not in the WASM build. Playback reads through the path-based decoders that
   build compiles out, and a single-threaded module has nowhere to put a feeder.
 
+### Added: `PlaybackSession`, with a seek and a playhead
+
+`MonowavePlatform.openPlayback` hands back a `PlaybackSession`: `play`, `pause`,
+`seek`, `position`, `duration`, `isPlaying`, `isFinished` and `underruns`. It is
+the mirror of `CaptureSession`, and what it plays is byte-identical to what
+`exportWav` would write for the same document.
+
+**The playhead is the device, not a timer.** `position` is read from the frames
+the device has actually consumed. A timer drifts against the audio clock
+immediately, and the playhead then sits where the sound is not - which is what
+the example's `DemoPlayer` does, correctly for a fake and wrongly for anything
+real. A test asserts the playhead does not move while nothing is consumed.
+
+**A seek is a handshake.** Flushing a ring that a feeder is filling and a device
+is draining cannot be done by either of them, because neither may block. So
+`wf_playback_seek` blocks its own caller instead, waits for the consumer to
+leave the audio callback and the feeder to park, and only then resets the ring.
+The device hears a few milliseconds of silence, which is the right sound for a
+seek. Accuracy is the decoder's: sample-exact on WAV, and about 26 ms on MP3,
+which lands on a frame boundary and then decodes forward.
+
+`PlaybackSession` deliberately does not implement `MonoPlaybackController`. That
+interface lives in monokit, and a headless package must not depend on the design
+system, so the adapter stays the few lines a host writes.
+
+- `FakePlaybackSession` in `package:monowave/testing.dart`. A test asserts it
+  and the real session agree on the shared contract, including clamping a seek
+  past the end and answering counters after disposal, so a host cannot build a
+  scrubber against the fake and then meet a different contract on a device.
+- `FfiPlaybackSession` carries a `NativeFinalizer` from the start. A dropped
+  session gives back the output device and the feeder thread without waiting for
+  the process to exit.
+
+This is M8. Live document updates are M9 and web playback is M10; see
+[ROADMAP.md](ROADMAP.md).
+
+### Added: swap a document while it plays
+
+`PlaybackSession.setDocument` replaces the region list underneath a running
+session. Drag a trim handle, change a gain, and hear the result without playback
+stopping. This is the feature the whole playback path exists for.
+
+The playhead keeps its position in the output timeline, so the sound carries on
+from where it was rather than jumping, and a change that shortens the document
+below the playhead clamps to the new end. A host that wants different behaviour
+calls `seek` straight after.
+
+**One call rather than two.** The roadmap left open whether a gain change and a
+trim should be separate entry points, on the theory that the first is cheaper.
+It is not: both discard whatever the ring had queued, because those frames were
+rendered through the old document, and the ring holds about a second. A second
+entry point would buy a caller nothing but a decision to get wrong.
+
+Mechanically a swap is a seek with a new region list, so it reuses the seek
+handshake from M8 unchanged.
+
+- `FakePlaybackSession.setDocument` records every swap and clamps the same way,
+  and a test asserts the two agree.
+- A rejected swap leaves the old document playing. The new list is copied in C
+  before the old one is released, so a failed allocation changes nothing.
+
+This is M9. Web playback is M10; see [ROADMAP.md](ROADMAP.md).
+
 ### Changed
 
+- **ABI 11 → 12.** Additive: `wf_render_set_regions` and
+  `wf_playback_set_regions`.
+- **ABI 10 → 11.** Additive: `wf_render_seek` and `wf_playback_seek`.
 - **ABI 9 → 10.** Additive: the `wf_playback_*` surface. No existing signature
   changed.
 - **ABI 8 → 9.** Additive: `wf_envelope`, `wf_render_open`, `wf_render_close`,
