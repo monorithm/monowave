@@ -86,6 +86,12 @@ The output is 16-bit PCM WAV, which is also what the exporter reads, so a record
 Call it, and call it as soon as the recording is over.
 It is idempotent, and it is separate from `stop()` -- `stop` ends the take and hands you peaks, `dispose` releases the session, and the peaks are disposed separately again.
 
+If a `recordTo` file is still open it is closed too, with the real sizes written into its header, so **cancelling** a recording -- `dispose()` with no `stop()` -- leaves a WAV a player can open rather than one that reads as empty.
+What it does not do is drain first: anything the audio thread published since the last pass is lost, because finishing a take is `stop()`'s job.
+
+The four counters (`produced`, `dropped`, `pcmDropped`, `truncated`) keep answering after disposal, frozen at their final values, so a widget reading one while it tears down does not have to guard the call.
+`start`, `pause`, `resume` and `stop` throw a `StateError` instead, and a host driving its own ticker will find `drain()` returning 0 rather than throwing.
+
 A session that is garbage collected without one **is** destroyed, by a finalizer over the same C call, so a forgotten `dispose()` cannot leave the microphone open for the life of the process.
 Treat that as a backstop rather than a substitute.
 It runs whenever the collector happens to reach the object, which may be long after the user believes recording stopped, and is not guaranteed to happen at all before the process exits.

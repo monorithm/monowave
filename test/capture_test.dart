@@ -325,6 +325,98 @@ void main() {
     await session.dispose();
   });
 
+  group('disposing', () {
+    test('freezes the counters rather than reading freed memory', () async {
+      // The four counters read straight out of the C struct, and dispose frees
+      // it. They answer from a frozen tally afterwards instead of throwing,
+      // because a UI reading one while it tears down has a right to an answer -
+      // and because FakeCaptureSession answers too.
+      final session = await _session(ringCapacity: 8);
+      session.feedSynthetic(_tone(_hop * 64));
+
+      final before = (
+        produced: session.produced,
+        dropped: session.dropped,
+        pcmDropped: session.pcmDropped,
+        truncated: session.truncated,
+      );
+      expect(before.produced, 64);
+      expect(before.dropped, greaterThan(0));
+
+      await session.dispose();
+
+      // Churn the allocator so the freed struct is actually written over.
+      // Reading freed memory usually finds the old bytes still sitting there,
+      // so a test that only disposed and then read would pass about a third of
+      // the time with the bug still in place.
+      for (var i = 0; i < 8; i++) {
+        (await _session(ringCapacity: 8)).feedSynthetic(_tone(_hop * (i + 1)));
+      }
+
+      expect(session.produced, before.produced);
+      expect(session.dropped, before.dropped);
+      expect(session.pcmDropped, before.pcmDropped);
+      expect(session.truncated, before.truncated);
+      expect(session.isRecording, isFalse);
+      expect(session.isPaused, isFalse);
+    });
+
+    test('leaves a playable WAV when a take is abandoned', () async {
+      // dispose() without stop(). The audio is already on disk; only the
+      // header still claims the file ends at byte 44, so without the rewrite
+      // every player opens this and shows nothing.
+      final directory = Directory.systemTemp.createTempSync('monowave-drop');
+      addTearDown(() => directory.deleteSync(recursive: true));
+      final path = '${directory.path}/abandoned.wav';
+
+      final session = await FfiCaptureSession.open(
+        CaptureConfig(hop: _hop, recordTo: path),
+      );
+      session
+        ..feedSynthetic(_tone(_hop * 40, amplitude: 20000))
+        ..drain();
+
+      await session.dispose();
+
+      final decoded = await MonowavePlatform.instance.decodeBytes(
+        File(path).readAsBytesSync(),
+      );
+      addTearDown(decoded.dispose);
+
+      expect(decoded.lengthInSamples, _hop * 40);
+      expect(decoded.sampleRate, 44100);
+      expect(decoded.view(decoded.levels - 1)[1], closeTo(20000, 500));
+    });
+
+    test('does not close the recording file twice after a stop', () async {
+      // The ordinary way to end a recording is stop() then dispose(), and
+      // closing a RandomAccessFile twice throws.
+      final directory = Directory.systemTemp.createTempSync('monowave-close');
+      addTearDown(() => directory.deleteSync(recursive: true));
+      final path = '${directory.path}/take.wav';
+
+      final session = await FfiCaptureSession.open(
+        CaptureConfig(hop: _hop, recordTo: path),
+      );
+      session
+        ..feedSynthetic(_tone(_hop * 10))
+        ..drain();
+
+      final peaks = await session.stop();
+      addTearDown(peaks.dispose);
+
+      await expectLater(session.dispose(), completes);
+      final written = File(path).lengthSync();
+
+      await session.dispose();
+      expect(
+        File(path).lengthSync(),
+        written,
+        reason: 'a second dispose must not rewrite or truncate the file',
+      );
+    });
+  });
+
   group('a session dropped without dispose', () {
     // dispose() is still the contract. This is the backstop under it: a session
     // holds the C struct, two lock-free rings, the take history, the two drain

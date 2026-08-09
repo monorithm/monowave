@@ -44,6 +44,31 @@ Also fixed alongside it: an unwritable `CaptureConfig.recordTo` path leaked the
 session outright, because it threw between `wf_capture_create` and the
 constructor - with no Dart object in existence yet for a finalizer to attach to.
 
+### Fixed: disposing a session left a corrupt recording and a freed pointer
+
+Two loose ends around `CaptureSession.dispose`, both found while adding the
+finalizer above, and both behaviour changes in their own right.
+
+**It never closed the recording file.** `stop()` rewrites the WAV header with
+the real sizes and closes the file; `dispose()` did neither. Opening with
+`CaptureConfig.recordTo` and disposing without stopping - which is what
+cancelling a recording looks like - leaked the open handle and left a WAV whose
+header still claimed the audio after it was zero bytes long, so every player
+opened it and showed nothing. `dispose()` now closes it the same way `stop()`
+does, and an abandoned take is playable rather than corrupt. It deliberately
+does not drain first: finishing a take is still `stop()`'s job, and whatever the
+audio thread published since the last pass is lost. The close is idempotent, so
+the ordinary `stop()` then `dispose()` sequence is unaffected.
+
+**`produced`, `dropped`, `pcmDropped` and `truncated` read freed memory after
+it.** All four read straight out of the C struct, which `dispose()` frees. They
+now answer from a tally frozen at disposal. Frozen rather than throwing, unlike
+`start` or `feedSynthetic`: a counter is a query with a correct answer after
+disposal, and `FakeCaptureSession` already answered it - so a host whose
+visualizer read one while tearing down would have passed its widget tests and
+then read freed memory against a real microphone. `isRecording` and `isPaused`
+are now false after disposal too, on both the real session and the fake.
+
 ### Changed
 
 - **ABI 7 → 8.** Additive: `wf_capture_scratch`, `wf_capture_scratch_frames`,

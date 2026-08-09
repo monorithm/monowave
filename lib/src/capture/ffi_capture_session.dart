@@ -119,6 +119,7 @@ class FfiCaptureSession implements CaptureSession, Finalizable {
   bool _recording = false;
   bool _paused = false;
   bool _disposed = false;
+  bool _sinkClosed = false;
 
   @override
   Stream<CaptureFrame> get frames => _frames.stream;
@@ -129,17 +130,35 @@ class FfiCaptureSession implements CaptureSession, Finalizable {
   @override
   bool get isPaused => _paused;
 
-  @override
-  int get produced => bindings.wfCaptureProduced(_capture).toInt();
+  /// The counters as they stood at [dispose], or null while the session is
+  /// still alive.
+  ///
+  /// The four getters below read straight out of the C struct, and [dispose]
+  /// frees it - so without this they would read freed memory rather than throw.
+  /// Freezing rather than throwing, unlike every other member here: a counter is
+  /// a query with a correct answer after disposal, where `start` or `stop` have
+  /// nothing meaningful left to do. It also keeps this in step with
+  /// `FakeCaptureSession`, which answers the same four after disposal, so a UI
+  /// reading a counter while it tears down behaves the same in a widget test as
+  /// it does in production.
+  ({int produced, int dropped, int pcmDropped, bool truncated})? _finalCounts;
 
   @override
-  int get dropped => bindings.wfCaptureDropped(_capture).toInt();
+  int get produced =>
+      _finalCounts?.produced ?? bindings.wfCaptureProduced(_capture).toInt();
 
   @override
-  int get pcmDropped => bindings.wfCapturePcmDropped(_capture).toInt();
+  int get dropped =>
+      _finalCounts?.dropped ?? bindings.wfCaptureDropped(_capture).toInt();
 
   @override
-  bool get truncated => bindings.wfCaptureOverflowed(_capture) != 0;
+  int get pcmDropped =>
+      _finalCounts?.pcmDropped ??
+      bindings.wfCapturePcmDropped(_capture).toInt();
+
+  @override
+  bool get truncated =>
+      _finalCounts?.truncated ?? bindings.wfCaptureOverflowed(_capture) != 0;
 
   @override
   Future<void> start() async {
@@ -258,14 +277,7 @@ class FfiCaptureSession implements CaptureSession, Finalizable {
     // rather than a frame or two short.
     drain();
 
-    final sink = _sink;
-    if (sink != null) {
-      // Now that the length is known, go back and write the real header.
-      await sink.setPosition(0);
-      await sink.writeFrom(_wavHeader(config, _samplesWritten));
-      await sink.flush();
-      await sink.close();
-    }
+    await _closeSink();
 
     final error = calloc<Int32>();
     try {
@@ -281,6 +293,32 @@ class FfiCaptureSession implements CaptureSession, Finalizable {
     } finally {
       calloc.free(error);
     }
+  }
+
+  /// Writes the real sizes into the WAV header and closes the file, once.
+  ///
+  /// Both [stop] and [dispose] need this. [stop] finishes a take with it;
+  /// [dispose] uses it so that abandoning one leaves a file a player can open
+  /// rather than an open handle and a header still claiming zero length. The
+  /// audio was already on disk in both cases - only the header was wrong.
+  ///
+  /// Idempotent, because closing a [RandomAccessFile] twice throws and
+  /// `stop()` followed by `dispose()` is the ordinary way to end a recording.
+  ///
+  /// What it deliberately does not do is drain: whatever the audio thread has
+  /// published since the last pass stays in the ring and is lost. Finishing a
+  /// take is [stop]'s job, and a caller who wanted those samples would have
+  /// called it - this only keeps an abandoned file from being corrupt.
+  Future<void> _closeSink() async {
+    final sink = _sink;
+    if (sink == null || _sinkClosed) return;
+    _sinkClosed = true;
+
+    // Now that the length is known, go back and write the real header.
+    await sink.setPosition(0);
+    await sink.writeFrom(_wavHeader(config, _samplesWritten));
+    await sink.flush();
+    await sink.close();
   }
 
   /// Drives the audio-thread path with synthetic interleaved PCM.
@@ -309,6 +347,18 @@ class FfiCaptureSession implements CaptureSession, Finalizable {
 
     _timer?.cancel();
     _timer = null;
+    _recording = false;
+    _paused = false;
+
+    // Read the counters out while there is still something to read them from.
+    // After the destroy below the struct is gone, and the getters would be
+    // reading freed memory rather than reporting the final tally.
+    _finalCounts = (
+      produced: produced,
+      dropped: dropped,
+      pcmDropped: pcmDropped,
+      truncated: truncated,
+    );
 
     // Detach first, so the finalizer cannot come back later and destroy a
     // pointer this call has already freed. `_disposed` guards the same thing
@@ -320,6 +370,10 @@ class FfiCaptureSession implements CaptureSession, Finalizable {
     _finalizer.detach(this);
     bindings.wfCaptureDestroy(_capture);
 
+    // A no-op when stop() already did it. Without it, disposing a recording
+    // session that was never stopped leaks the handle and leaves a WAV whose
+    // header still says the audio after it is zero bytes long.
+    await _closeSink();
     await _frames.close();
   }
 
