@@ -217,6 +217,38 @@ double wf_render_length_frames(const wf_render *render) {
   return render == NULL ? 0.0 : (double)render->length;
 }
 
+int32_t wf_render_seek(wf_render *render, double output_frame) {
+  if (render == NULL) return WF_ERR_ARGUMENT;
+
+  int64_t target = (int64_t)output_frame;
+  if (target < 0) target = 0;
+  if (target > render->length) target = render->length;
+
+  // Walk the regions rather than dividing. They have different lengths, and a
+  // zero-length one contributes nothing but must not shift the mapping.
+  int64_t seen = 0;
+  for (int32_t index = 0; index < render->region_count; index++) {
+    const int64_t length = wf_region_frames(&render->regions[index]);
+    if (length == 0) continue;
+
+    if (target < seen + length) {
+      render->index = index;
+      render->offset = target - seen;
+      render->seek_pending = 1;
+      render->failed = 0;
+      return WF_OK;
+    }
+    seen += length;
+  }
+
+  // At or past the end. The next read returns nothing.
+  render->index = render->region_count;
+  render->offset = 0;
+  render->seek_pending = 1;
+  render->failed = 0;
+  return WF_OK;
+}
+
 int32_t wf_render_read(wf_render *render, int16_t *out, int32_t max_frames) {
   if (render == NULL || out == NULL || max_frames <= 0) return 0;
   if (render->failed) return -1;
@@ -387,6 +419,12 @@ int32_t wf_render_channels(const wf_render *render) {
 double wf_render_length_frames(const wf_render *render) {
   (void)render;
   return 0.0;
+}
+
+int32_t wf_render_seek(wf_render *render, double output_frame) {
+  (void)render;
+  (void)output_frame;
+  return WF_ERR_OPEN;
 }
 
 int32_t wf_render_read(wf_render *render, int16_t *out, int32_t max_frames) {

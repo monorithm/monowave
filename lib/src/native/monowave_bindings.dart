@@ -285,6 +285,9 @@ external int wfRenderChannels(Pointer<WfRender> render);
 @Native<Double Function(Pointer<WfRender>)>(symbol: 'wf_render_length_frames')
 external double wfRenderLengthFrames(Pointer<WfRender> render);
 
+@Native<Int32 Function(Pointer<WfRender>, Double)>(symbol: 'wf_render_seek')
+external int wfRenderSeek(Pointer<WfRender> render, double outputFrame);
+
 @Native<Int32 Function(Pointer<WfRender>, Pointer<Int16>, Int32)>(
   symbol: 'wf_render_read',
 )
@@ -360,6 +363,9 @@ external int wfPlaybackChannels(Pointer<WfPlayback> playback);
 )
 external double wfPlaybackLengthFrames(Pointer<WfPlayback> playback);
 
+@Native<Int32 Function(Pointer<WfPlayback>, Double)>(symbol: 'wf_playback_seek')
+external int wfPlaybackSeek(Pointer<WfPlayback> playback, double outputFrame);
+
 @Native<Int32 Function(Pointer<WfPlayback>)>(symbol: 'wf_playback_start')
 external int wfPlaybackStart(Pointer<WfPlayback> playback);
 
@@ -370,6 +376,16 @@ external int wfPlaybackStop(Pointer<WfPlayback> playback);
 final Pointer<NativeFinalizerFunction> wfPeaksFreeAddress =
     Native.addressOf<NativeFunction<Void Function(Pointer<WfPeaks>)>>(
       wfPeaksFree,
+    ).cast();
+
+/// The address of [wfPlaybackDestroy], for attaching to a [NativeFinalizer].
+///
+/// `wf_playback_destroy` stops the device and joins the feeder thread before it
+/// frees anything, so a session collected without `dispose()` gives back the
+/// output device and the thread as well as the memory.
+final Pointer<NativeFinalizerFunction> wfPlaybackDestroyAddress =
+    Native.addressOf<NativeFunction<Void Function(Pointer<WfPlayback>)>>(
+      wfPlaybackDestroy,
     ).cast();
 
 /// The address of [wfCaptureDestroy], for attaching to a [NativeFinalizer].
