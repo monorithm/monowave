@@ -198,11 +198,23 @@ jobs:
         working-directory: example
         run: flutter build web
 
-      # UNPROVEN: the chrome platform runner hangs with no output locally, so
-      # this has never actually run. It is not the gate — the node check above
-      # proves the same property reliably — so a failure here is informational
-      # until someone works out whether it is a local problem or a real one.
+      # A gate since it was shown to run here: the chrome platform runner hangs
+      # with no output on at least one dev machine, which is why this was
+      # informational for its first few months. It passes on this runner, so the
+      # hang is local.
+      #
+      # It earns the gate by covering the one leg the checks above cannot. The
+      # node check proves the artifact computes a value and exports it; the
+      # `_Core` extension type makes a member it does not declare a compile
+      # error. Neither can see a binding that reads a series and then forgets to
+      # pass it on, which is half of how 0.3.0 shipped `rms` returning null on
+      # web. Only decoding through the real binding in a real browser catches
+      # that.
+      #
+      # The timeout is because of the hang above. Left to itself a wedged
+      # browser runner would sit here until the job's 6-hour ceiling, blocking
+      # the PR and burning the runner; the whole job takes about 15 minutes.
       - name: Run the WASM binding in a browser
-        continue-on-error: true
+        timeout-minutes: 10
         working-directory: example
         run: flutter test --platform chrome test/web_wasm_test.dart
