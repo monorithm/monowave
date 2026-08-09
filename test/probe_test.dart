@@ -10,7 +10,7 @@ import 'package:test/test.dart';
 
 void main() {
   test('the C core links and reports its ABI version', () {
-    expect(wfAbiVersion(), 9);
+    expect(wfAbiVersion(), 10);
   });
 
   test('min/max reduction survives the FFI boundary', () {

@@ -294,6 +294,78 @@ external int wfRenderRead(
   int maxFrames,
 );
 
+// --- Playback ---------------------------------------------------------------
+
+/// Opaque handle to a render being fed to an audio device.
+final class WfPlayback extends Opaque {}
+
+@Native<
+  Pointer<WfPlayback> Function(
+    Pointer<Utf8>,
+    Pointer<WfRegion>,
+    Int32,
+    Int32,
+    Pointer<Int32>,
+  )
+>(symbol: 'wf_playback_create')
+external Pointer<WfPlayback> wfPlaybackCreate(
+  Pointer<Utf8> sourcePath,
+  Pointer<WfRegion> regions,
+  int regionCount,
+  int ringFrames,
+  Pointer<Int32> outError,
+);
+
+@Native<Void Function(Pointer<WfPlayback>)>(symbol: 'wf_playback_destroy')
+external void wfPlaybackDestroy(Pointer<WfPlayback> playback);
+
+/// The audio-thread entry point, exposed so tests can drive the realtime path
+/// with no output device. `out` always comes back fully written; the return
+/// value is the frames that were real audio rather than silence.
+@Native<Int32 Function(Pointer<WfPlayback>, Pointer<Int16>, Int32)>(
+  symbol: 'wf_playback_pull',
+)
+external int wfPlaybackPull(
+  Pointer<WfPlayback> playback,
+  Pointer<Int16> out,
+  int frames,
+);
+
+@Native<Int32 Function(Pointer<WfPlayback>)>(symbol: 'wf_playback_available')
+external int wfPlaybackAvailable(Pointer<WfPlayback> playback);
+
+@Native<Int32 Function(Pointer<WfPlayback>)>(symbol: 'wf_playback_drained')
+external int wfPlaybackDrained(Pointer<WfPlayback> playback);
+
+@Native<Int32 Function(Pointer<WfPlayback>)>(symbol: 'wf_playback_finished')
+external int wfPlaybackFinished(Pointer<WfPlayback> playback);
+
+@Native<Int32 Function(Pointer<WfPlayback>)>(symbol: 'wf_playback_failed')
+external int wfPlaybackFailed(Pointer<WfPlayback> playback);
+
+@Native<Double Function(Pointer<WfPlayback>)>(symbol: 'wf_playback_consumed')
+external double wfPlaybackConsumed(Pointer<WfPlayback> playback);
+
+@Native<Double Function(Pointer<WfPlayback>)>(symbol: 'wf_playback_underruns')
+external double wfPlaybackUnderruns(Pointer<WfPlayback> playback);
+
+@Native<Int32 Function(Pointer<WfPlayback>)>(symbol: 'wf_playback_sample_rate')
+external int wfPlaybackSampleRate(Pointer<WfPlayback> playback);
+
+@Native<Int32 Function(Pointer<WfPlayback>)>(symbol: 'wf_playback_channels')
+external int wfPlaybackChannels(Pointer<WfPlayback> playback);
+
+@Native<Double Function(Pointer<WfPlayback>)>(
+  symbol: 'wf_playback_length_frames',
+)
+external double wfPlaybackLengthFrames(Pointer<WfPlayback> playback);
+
+@Native<Int32 Function(Pointer<WfPlayback>)>(symbol: 'wf_playback_start')
+external int wfPlaybackStart(Pointer<WfPlayback> playback);
+
+@Native<Int32 Function(Pointer<WfPlayback>)>(symbol: 'wf_playback_stop')
+external int wfPlaybackStop(Pointer<WfPlayback> playback);
+
 /// The address of [wfPeaksFree], for attaching to a [NativeFinalizer].
 final Pointer<NativeFinalizerFunction> wfPeaksFreeAddress =
     Native.addressOf<NativeFunction<Void Function(Pointer<WfPeaks>)>>(

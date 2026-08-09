@@ -17,6 +17,11 @@ const _portableSources = [
   'src/wf_decode.c',
   'src/wf_capture.c',
   'src/wf_export.c',
+  // Not in tool/build_wasm.sh, deliberately. Playback reads a source through
+  // the path-based decoders, which the WASM build compiles out, and it spawns
+  // a feeder thread that a single-threaded module has nowhere to put. Web
+  // playback is a WebAudio graph instead; see ROADMAP.md, M10.
+  'src/wf_playback.c',
 ];
 
 /// Frameworks miniaudio's Core Audio backend needs on Apple platforms.

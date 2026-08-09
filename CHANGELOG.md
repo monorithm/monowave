@@ -42,8 +42,43 @@ falls.
 This is M6 of the playback work. `PlaybackSession` and an audio device arrive in
 M7 and M8. See [ROADMAP.md](ROADMAP.md).
 
+### Added: a document can be fed to an audio device
+
+`wf_playback` puts the M6 renderer behind a lock-free SPSC ring and a feeder
+thread, and hands the result to a miniaudio output device. It is the capture
+pipeline pointed the other way, and it obeys the same rule: the audio callback
+copies out of a ring and does nothing else. No allocation, no lock, no call into
+Dart.
+
+The feeder is a C thread rather than a timer on the Dart side. Capture tolerates
+a late drain because its ring holds seconds and a stalled consumer loses
+nothing. Playback does not - an empty ring is silence in the speaker, and one
+garbage collection would be an audible dropout.
+
+Underruns are counted rather than hidden, the way `CaptureSession.dropped` is.
+Silence past the end of the render is the end rather than a fault, and the
+counter knows the difference.
+
+`wf_playback_pull` is public for the same reason `wf_capture_feed` is: it is the
+audio-thread entry point, so the realtime path is testable on every platform
+with no sound card. The test drives 30 seconds of an edited document through the
+ring and asserts the result is byte-identical to what M6 renders offline, with
+zero underruns.
+
+This is M7. `PlaybackSession`, seeking and a position clock arrive in M8; see
+[ROADMAP.md](ROADMAP.md).
+
+- **`src/wf_playback.c` carries the first per-platform code in the package**, a
+  thread, a join and a sleep behind `#if defined(_WIN32)`. miniaudio keeps its
+  own thread abstraction private - `ma_thread_create` is `static` - and
+  vendoring a second threading library for three functions was the worse trade.
+- Not in the WASM build. Playback reads through the path-based decoders that
+  build compiles out, and a single-threaded module has nowhere to put a feeder.
+
 ### Changed
 
+- **ABI 9 → 10.** Additive: the `wf_playback_*` surface. No existing signature
+  changed.
 - **ABI 8 → 9.** Additive: `wf_envelope`, `wf_render_open`, `wf_render_close`,
   `wf_render_read`, `wf_render_sample_rate`, `wf_render_channels` and
   `wf_render_length_frames`. No existing signature changed, and the determinism
