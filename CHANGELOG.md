@@ -8,7 +8,11 @@ follows [semantic versioning](https://semver.org/spec/v2.0.0.html).
 development milestones, kept here because what changed in them is still the
 history of this API.
 
-## Unreleased
+## 0.3.1
+
+A capture session that kept the microphone open after it was dropped, an
+abandoned recording left corrupt on disk, and an RMS series that reached five
+of the six targets.
 
 ### Fixed: a dropped capture session kept the microphone open
 

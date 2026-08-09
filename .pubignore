@@ -57,3 +57,15 @@ bun.lock
 /tool/
 # Website-only: HTML specimens embedded into the docs site, useless in a package.
 /demos/
+
+# The guides. They live on the docs site, which the pubspec points at, and in
+# the repo, which the README links into -- so shipping a second copy inside the
+# archive gains a consumer nothing.
+#
+# It also has to go, rather than merely being tidy: pub's layout convention
+# wants a singular `doc/`, and `pub publish` treats the plural as a warning,
+# which makes `--dry-run` exit 65 and fails the validate gate in
+# `.github/workflows/publish.yml`. Renaming would drag the `docs/**` trigger in
+# `docs-sync.yml`, the README's links and the docs site's own paths along with
+# it, to put files in the archive nobody reads from there.
+/docs/
