@@ -43,7 +43,9 @@ sees one.
 `CaptureUnavailable`
 
 A running microphone capture, its configuration, one reduced hop, and the
-rolling window a meter draws from.
+rolling window a meter draws from. A session holds an open input device and must
+be disposed; a finalizer catches one that is dropped without it, but only
+whenever the collector gets there.
 
 → [Record audio](../10-recipes/40-record-audio.md) ·
 [Draw a live meter](../10-recipes/50-draw-a-live-meter.md)

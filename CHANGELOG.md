@@ -8,6 +8,51 @@ follows [semantic versioning](https://semver.org/spec/v2.0.0.html).
 development milestones, kept here because what changed in them is still the
 history of this API.
 
+## Unreleased
+
+### Fixed: a dropped capture session kept the microphone open
+
+`FfiCaptureSession` had no finalizer, so `wf_capture_destroy` ran only from an
+explicit `dispose()`. A consumer that dropped a session without one leaked the
+`wf_capture` struct, both lock-free rings, the preallocated take history and the
+two drain buffers - and, worse, left the platform input device open, so the
+microphone stayed live for the rest of the process. The decoded-peaks path had
+had a `NativeFinalizer` since it was written; capture never got one.
+
+It does now, over `wf_capture_destroy`, which stops the device before it frees
+anything. Two things had to change for it to be able to do its job:
+
+- **The drain buffers moved into C.** They were `calloc`ed from Dart and freed
+  in `dispose()`, which is exactly the memory a finalizer cannot reach: a
+  `NativeFinalizer` over `wf_capture_destroy` frees what the C struct owns and
+  nothing else. `wf_capture_scratch` and `wf_capture_pcm_scratch` now hand out
+  buffers allocated with the session, so everything it owns hangs off one
+  pointer and one call reclaims all of it.
+- **The drain timer holds the session weakly.** A pending `Timer.periodic` is a
+  GC root, and its callback captured `this` - so a session dropped *while
+  recording* stayed reachable forever and would never have been collected at
+  all. That is the case where the leak matters most, because the device is
+  still open. The timer now cancels itself on the first tick after the session
+  goes away.
+
+`dispose()` remains the contract, and the documentation still says to call it.
+A finalizer runs whenever the collector gets to the object, which may be long
+after the recording ended and is not guaranteed before the process exits.
+Nothing but `dispose()` releases the microphone promptly.
+
+Also fixed alongside it: an unwritable `CaptureConfig.recordTo` path leaked the
+session outright, because it threw between `wf_capture_create` and the
+constructor - with no Dart object in existence yet for a finalizer to attach to.
+
+### Changed
+
+- **ABI 7 → 8.** Additive: `wf_capture_scratch`, `wf_capture_scratch_frames`,
+  `wf_capture_pcm_scratch`, `wf_capture_pcm_scratch_samples` and
+  `wf_capture_live`. No existing signature changed. `wf_capture_live` reports
+  sessions created and not yet destroyed, and exists for the same reason
+  `wf_capture_feed` is public: it is what makes the binding's ownership testable
+  rather than asserted.
+
 ## 0.3.0
 
 Capture keeps the audio, the pyramid carries loudness, and the native core
