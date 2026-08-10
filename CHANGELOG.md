@@ -8,7 +8,18 @@ follows [semantic versioning](https://semver.org/spec/v2.0.0.html).
 development milestones, kept here because what changed in them is still the
 history of this API.
 
-## Unreleased
+## 0.4.0
+
+Monowave can play what it edits. An edit is rendered by the same C loop the
+exporter runs, so what you hear before committing to a trim is what the export
+writes afterwards - byte for byte, on all six targets.
+
+### Breaking for anyone implementing `MonowavePlatform`
+
+The seam gained four members: `renderPcm`, `renderPcmBytes`, `openPlayback` and
+`openPlaybackBytes`. Calling code is unaffected, and a host using
+`FakeMonowavePlatform` is unaffected, because the fake implements them. A host
+that implements the interface itself has four methods to add.
 
 ### Added: an edit can be rendered without writing a file
 
