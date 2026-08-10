@@ -14,165 +14,189 @@ import 'ffi_platform.dart'
 
 /// A single reduced window of audio: the extremes of the samples it covers.
 ///
-/// Min/max rather than an average - averaging destroys transients and renders
-/// speech as a flat sausage.
+/// This is a min/max pair and not an average. An average collapses transients
+/// and shows speech as a flat sausage.
 typedef MinMax = ({int min, int max});
 
 /// The native seam every call into the C core crosses.
 ///
-/// An interface rather than direct calls into the bindings so the engine can be
-/// exercised against an in-memory fake with no native code and no device, the
-/// same shape [monolens] uses for `MonolensPlatform`. It is also the line a
-/// federated split would cut along, if one is ever needed.
+/// This is an interface and not a set of direct calls into the bindings.
+/// Therefore a test can run the engine against an in-memory fake, with no
+/// native code and no device. [monolens] uses the same shape for
+/// `MonolensPlatform`. If a federated split is ever necessary, this is also
+/// the line that the split cuts along.
 ///
 /// [monolens]: https://github.com/monorithm/monolens
 abstract interface class MonowavePlatform {
-  /// The implementation calls run against. Assign a fake in `setUp` and restore
-  /// null in `tearDown`.
+  /// The implementation that calls run against.
+  ///
+  /// To use a fake, assign the fake in `setUp`. Then restore null in
+  /// `tearDown`.
   static MonowavePlatform get instance => _instance ??= impl.defaultPlatform();
   static set instance(MonowavePlatform? value) => _instance = value;
   static MonowavePlatform? _instance;
 
-  /// Loads the native core, if it is not loaded already. Idempotent.
+  /// If the C core is not loaded already, this method loads it. A second
+  /// call does nothing.
   ///
-  /// This exists because of web. Native targets resolve their code asset at
-  /// startup and have nothing to wait for, but instantiating a WASM module is
-  /// inherently asynchronous. The alternative - making every method return a
-  /// `Future` - would put an event-loop turn in front of [reduceMinMax], which
-  /// is called once per frame while scrubbing and once per hop while capturing.
-  /// One await up front is the cheaper shape.
+  /// This method exists because of web. Native targets resolve their code
+  /// asset at startup and have nothing to wait for. On web, the module must
+  /// instantiate first, and that operation is asynchronous by nature.
   ///
-  /// Every other method throws [MonowaveUnavailable] until this completes.
+  /// The alternative is to make every method return a `Future`. That
+  /// alternative puts an event-loop turn in front of [reduceMinMax]. A scrub
+  /// calls [reduceMinMax] one time for each frame. A capture calls it one time
+  /// for each hop. One await at the start is the cheaper shape.
+  ///
+  /// Until this method completes, every other method throws
+  /// [MonowaveUnavailable].
   Future<void> ensureInitialized();
 
-  /// The C core's ABI version. Bumped whenever a signature in `src/` changes.
+  /// The ABI version of the C core. Each time a signature in `src/` changes,
+  /// this version increases.
   int abiVersion();
 
-  /// Reduces [samples] to the pair of extremes it spans.
+  /// This method reduces [samples] to the pair of extremes that the samples
+  /// span.
   MinMax reduceMinMax(Int16List samples);
 
-  /// Decodes the audio file at [path] into a peak pyramid.
+  /// This method decodes the audio file at [path] into a peak pyramid.
   ///
-  /// Not available on web, which has no filesystem - use [decodeBytes] there.
-  /// Prefer this on native: the decoder streams the file a bucket at a time, so
-  /// an audiobook never has to be resident in memory.
+  /// Web has no filesystem, so this method is not available there. On web,
+  /// [decodeBytes] does this work instead. On native, this method is the
+  /// better choice, because the decoder streams the file one bucket at a time.
+  /// Therefore an audiobook never has to be resident in memory.
   ///
-  /// Throws [MonowaveDecodeException] if the container cannot be read.
+  /// If the container cannot be read, this method throws
+  /// [MonowaveDecodeException].
   Future<WaveformPeaks> decodeFile(
     String path, {
     int baseSamplesPerPixel = 128,
   });
 
-  /// Decodes an in-memory container. The only decode path on web.
+  /// This method decodes a container that is already in memory. On web, this
+  /// method is the only decode path.
   Future<WaveformPeaks> decodeBytes(
     Uint8List bytes, {
     int baseSamplesPerPixel = 128,
   });
 
-  /// Writes [document] to [outputPath] as 16-bit PCM WAV, reading from
-  /// [sourcePath].
+  /// This method reads from [sourcePath] and writes [document] to
+  /// [outputPath] as 16-bit PCM WAV.
   ///
-  /// Output is always WAV. An edit list is meant to reproduce the source
-  /// exactly where it did not change it, and re-encoding to a lossy format
-  /// would quietly break that.
+  /// The output is always WAV. An edit list must reproduce the source exactly
+  /// where the list does not change the source. monowave does not encode the
+  /// output to a lossy format, because a lossy encoder breaks that property
+  /// and gives no warning.
   ///
-  /// Not available on web, which has no filesystem to write to.
+  /// Web has no filesystem to write to, so this method is not available there.
   Future<void> exportWav({
     required String sourcePath,
     required String outputPath,
     required WaveformDocument document,
   });
 
-  /// Renders [document] to 16-bit PCM without writing a file.
+  /// This method renders [document] to 16-bit PCM and writes no file.
   ///
-  /// The samples are byte-identical to what [exportWav] would write for the
-  /// same document, because both run the same C loop. That equality is the
-  /// whole point: it is what lets a preview be trusted before an edit is
-  /// committed.
+  /// The samples are byte-identical to the samples that [exportWav] writes for
+  /// the same document, because both methods run the same C loop. That
+  /// equality is the whole point. It is the reason that you can trust a
+  /// preview before you commit an edit.
   ///
-  /// Returns interleaved frames at the source's own sample rate and channel
-  /// count. The whole render is resident, so this is for previews and tests
-  /// rather than for an audiobook - streaming playback arrives with
-  /// `PlaybackSession`. See ROADMAP.md.
+  /// This method returns interleaved frames at the sample rate and the channel
+  /// count that the source itself uses. The whole render stays resident in
+  /// memory. Therefore this method is for previews and tests, and not for an
+  /// audiobook. For streaming playback, [openPlayback] opens a
+  /// `PlaybackSession`. ROADMAP.md has more information.
   ///
-  /// Not available on web, which has no filesystem to read.
+  /// Web has no filesystem to read, so this method is not available there.
   Future<Int16List> renderPcm({
     required String sourcePath,
     required WaveformDocument document,
   });
 
-  /// Renders [document] to 16-bit PCM from bytes already in memory.
+  /// This method renders [document] to 16-bit PCM from bytes that are already
+  /// in memory.
   ///
-  /// The only render path on web, which has no filesystem - and it runs the
-  /// same C loop the exporter does, over the same decoders, so the output is
-  /// byte-identical on all six targets rather than on five.
+  /// Web has no filesystem, so this method is the only render path there. This
+  /// method runs the same C loop as the exporter, over the same decoders.
+  /// Therefore the output is byte-identical on all six targets, and not on
+  /// five.
   ///
-  /// Prefer [renderPcm] on native when the audio is a file: it streams the
-  /// source rather than holding a copy of the container in memory as well.
+  /// On native, when the audio is a file, [renderPcm] is the better choice.
+  /// [renderPcm] streams the source. This method holds a copy of the container
+  /// in memory as well.
   Future<Int16List> renderPcmBytes({
     required Uint8List bytes,
     required WaveformDocument document,
   });
 
-  /// Opens a playback session over [document], reading from [sourcePath].
+  /// This method reads from [sourcePath] and opens a playback session over
+  /// [document].
   ///
-  /// What it plays is byte-identical to what [exportWav] would write, because
-  /// both run the same C loop. Hearing an edit before committing to it is only
-  /// useful when what you hear is what you get.
+  /// The audio that the session plays is byte-identical to the audio that
+  /// [exportWav] writes, because both run the same C loop. You listen to an
+  /// edit before you commit to it. That is useful only when what you hear is
+  /// what you get.
   ///
-  /// Not available on web, which has no filesystem to read a source from.
+  /// Web has no filesystem to read a source from, so this method is not
+  /// available there.
   Future<PlaybackSession> openPlayback({
     required String sourcePath,
     required WaveformDocument document,
   });
 
-  /// Opens a playback session over bytes already in memory.
+  /// This method opens a playback session over bytes that are already in
+  /// memory.
   ///
-  /// The only playback path on web, which has no filesystem. On native it is
-  /// the same engine as [openPlayback], reading from a copy of the bytes rather
-  /// than streaming a file.
+  /// Web has no filesystem, so this method is the only playback path there. On
+  /// native, this method uses the same engine as [openPlayback]. It reads from
+  /// a copy of the bytes, and it does not stream a file.
   ///
-  /// What plays is byte-identical to what [exportWav] would write on every
-  /// target, because every target renders through the same C loop. What differs
-  /// is only the device underneath: miniaudio natively, a WebAudio graph on
-  /// web.
+  /// The audio that plays is byte-identical to the audio that [exportWav]
+  /// writes on every target, because every target renders through the same C
+  /// loop. Only the device is different. Native targets use miniaudio. Web
+  /// uses a WebAudio graph.
   Future<PlaybackSession> openPlaybackBytes({
     required Uint8List bytes,
     required WaveformDocument document,
   });
 
-  /// Opens a microphone capture session.
+  /// This method opens a microphone capture session.
   ///
-  /// Does not request permission. A headless package has no UI to explain why
-  /// it is asking, and the host does - so this throws [CaptureUnavailable] if
-  /// the permission has not already been granted.
+  /// This method does not request permission. A headless package has no UI to
+  /// give the reason for the request, and the host has one. If the permission
+  /// is not already granted, this method throws [CaptureUnavailable].
   Future<CaptureSession> openCapture([
     CaptureConfig config = const CaptureConfig(),
   ]);
 }
 
-/// Why a decode failed, mirroring the C core's error codes.
+/// The reason that a decode failed. These values mirror the error codes of the
+/// C core.
 enum DecodeFailure {
-  /// The input could not be opened or read.
+  /// The decoder cannot open the input or read it.
   unreadable,
 
-  /// The container was not one of WAV, MP3 or FLAC.
+  /// The container is not WAV, MP3 or FLAC.
   ///
-  /// AAC/M4A lands here: it needs a platform decoder monowave does not carry.
-  /// The voice-note path avoids this entirely by computing peaks at record time.
+  /// AAC/M4A gets this failure, because it needs a platform decoder that
+  /// monowave does not carry. The voice-note path computes peaks at record
+  /// time, so it avoids this failure completely.
   unsupportedFormat,
 
-  /// The decoder failed part-way through a stream it had accepted.
+  /// The decoder accepted a stream, then it failed part-way through that
+  /// stream.
   corrupt,
 
   /// The input decoded to no audio at all.
   empty,
 
-  /// An allocation failed, or a caller passed something invalid.
+  /// An allocation failed, or a caller passed an invalid value.
   internal,
 }
 
-/// Thrown when a decode does not produce peaks.
+/// This exception shows that a decode did not produce peaks.
 class MonowaveDecodeException implements Exception {
   const MonowaveDecodeException(this.failure, this.message);
 
@@ -183,7 +207,8 @@ class MonowaveDecodeException implements Exception {
   String toString() => 'MonowaveDecodeException(${failure.name}): $message';
 }
 
-/// Thrown when the platform's native core is unavailable or failed to load.
+/// This exception shows that the C core of the platform is not available, or
+/// that the C core did not load.
 class MonowaveUnavailable implements Exception {
   const MonowaveUnavailable(this.message);
 

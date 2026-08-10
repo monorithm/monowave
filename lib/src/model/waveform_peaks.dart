@@ -2,16 +2,18 @@ import 'dart:typed_data';
 
 /// A mipmap pyramid of min/max peaks.
 ///
-/// Level 0 is the finest resolution monowave holds; each level above it covers
-/// twice as many samples per pair. Zooming picks a level rather than re-reading
-/// the file, which is what keeps a pan over a three-hour recording free.
+/// Level 0 is the finest resolution that monowave holds. Each level above it
+/// covers two times as many samples for each pair. A zoom picks a level and
+/// does not read the file again. This is what keeps a pan over a three-hour
+/// recording free.
 ///
-/// Peaks are stored interleaved as `[min0, max0, min1, max1, ...]`. M1 backs
-/// that with a Dart [Int16List]; M2 backs the same API with a view over memory
-/// the C core owns, so nothing here changes when the decoder lands.
+/// monowave stores peaks interleaved as `[min0, max0, min1, max1, ...]`. M1
+/// backs that data with a Dart [Int16List]. M2 backs the same API with a view
+/// over memory that the C core owns. As a result, nothing here changes when the
+/// decoder lands.
 ///
-/// **Reduction is always min/max, never an average.** Averaging collapses
-/// transients and renders speech as a flat sausage. [rms] is available as a
+/// **Reduction is always min/max, never an average.** An average collapses
+/// transients and shows speech as a flat sausage. [rms] is available as a
 /// second series to overlay, not as a replacement.
 class WaveformPeaks {
   // The two private fields are positional: Dart does not allow a named
@@ -27,15 +29,15 @@ class WaveformPeaks {
   }) : _rms = rms, // ignore: prefer_initializing_formals
        _onDispose = onDispose; // ignore: prefer_initializing_formals
 
-  /// Wraps levels that were built elsewhere - by the C core, over memory it
-  /// still owns.
+  /// Wraps levels that the C core built elsewhere, over memory that it still
+  /// owns.
   ///
-  /// [onDispose] releases that memory. It also keeps whatever owns the
-  /// allocation reachable for as long as this object is, which is what stops a
-  /// finalizer from freeing peaks a painter is still reading.
+  /// [onDispose] releases that memory. It also keeps the owner of the
+  /// allocation reachable for as long as this object is reachable. As a result,
+  /// a finalizer cannot release peaks that a painter still reads.
   ///
-  /// Nothing in this file imports `dart:ffi`: the native-ness lives entirely in
-  /// the closure, so the model still compiles for web.
+  /// Nothing in this file imports `dart:ffi`. The dependency on native code
+  /// stays entirely in the closure, so the model still compiles for web.
   factory WaveformPeaks.fromLevels(
     List<Int16List> levels, {
     required int sampleRate,
@@ -62,7 +64,8 @@ class WaveformPeaks {
   /// Sample rate of the source audio, in hertz.
   final int sampleRate;
 
-  /// Channels the source had. Peaks themselves are always mono-mixed for now.
+  /// The number of channels that the source had. The peaks themselves are
+  /// always mono-mixed for now.
   final int channels;
 
   /// Length of the source audio in samples, per channel.
@@ -74,15 +77,15 @@ class WaveformPeaks {
   final void Function()? _onDispose;
   bool _disposed = false;
 
-  /// Whether [dispose] has been called. Reading peaks afterwards throws.
+  /// True after a call to [dispose]. A read of peaks after that call throws.
   bool get isDisposed => _disposed;
 
   /// Number of mipmap levels. Level 0 is finest.
   int get levels => _levels.length;
 
-  /// The finest resolution held, in samples per min/max pair.
+  /// The finest resolution that the pyramid holds, in samples per min/max pair.
   ///
-  /// Zooming past this is the one operation that cannot be served from memory.
+  /// A zoom past this resolution is the one operation that memory cannot serve.
   int get finestSamplesPerPixel => _baseSamplesPerPixel;
 
   /// Samples covered by one min/max pair at [level].
@@ -93,10 +96,10 @@ class WaveformPeaks {
 
   /// The interleaved `[min, max, ...]` data at [level].
   ///
-  /// Zero-copy and not defensively copied - treat it as read-only. Writing to
-  /// it corrupts every level built above it. When these peaks came from the C
-  /// core, this is a view straight into native memory, which is why a
-  /// three-hour recording never reaches the Dart heap.
+  /// This data is zero-copy, and monowave does not copy it defensively. Treat
+  /// it as read-only. A write to it corrupts every level built above it. If
+  /// these peaks came from the C core, this data is a view straight into native
+  /// memory. This is why a three-hour recording never reaches the Dart heap.
   Int16List view(int level) {
     if (_disposed) {
       throw StateError('These peaks were disposed; the memory is gone.');
@@ -104,14 +107,14 @@ class WaveformPeaks {
     return _levels[level];
   }
 
-  /// One RMS value per pair at [level], or null if none was computed.
+  /// One RMS value per pair at [level]. Null if monowave computed none.
   ///
-  /// Peaks say how far the audio went; RMS says how much of it there was.
-  /// Drawing both - a peak hull with an RMS core inside it - is what makes a
-  /// waveform read as a shape rather than as its outliers.
+  /// Peaks tell you how far the audio went. RMS tells you how much of it there
+  /// was. A waveform that shows both (a peak hull with an RMS core inside it)
+  /// reads as a shape and not as its outliers.
   ///
-  /// Null for pyramids built in Dart from raw samples, which have no reason to
-  /// compute it; the C core always provides it.
+  /// This value is null for a pyramid that Dart built from raw samples, because
+  /// such a pyramid has no reason to compute it. The C core always supplies it.
   Int16List? rms(int level) {
     if (_disposed) {
       throw StateError('These peaks were disposed; the memory is gone.');
@@ -122,21 +125,22 @@ class WaveformPeaks {
 
   /// Releases the memory behind these peaks.
   ///
-  /// A no-op for peaks built in Dart, and required for peaks the C core
-  /// allocated. Idempotent. Any view handed out beforehand dangles afterwards,
-  /// so drop those first.
+  /// This method does nothing for peaks that Dart built. It is necessary for
+  /// peaks that the C core allocated. It is idempotent. Any view that this
+  /// object gave out before the call dangles after it, so remove those views
+  /// first.
   void dispose() {
     if (_disposed) return;
     _disposed = true;
     _onDispose?.call();
   }
 
-  /// The coarsest level whose resolution is still at least as fine as
+  /// The coarsest level with a resolution that is still at least as fine as
   /// [targetSamplesPerPixel].
   ///
-  /// Drawing from a level finer than the target wastes work; drawing from a
-  /// coarser one visibly loses detail. This picks the cheapest level that does
-  /// not lose any.
+  /// If you draw from a level finer than the target, you waste work. If you
+  /// draw from a coarser level, you visibly lose detail. This method picks the
+  /// cheapest level that loses no detail.
   int levelFor(double targetSamplesPerPixel) {
     var level = 0;
     while (level + 1 < levels &&
@@ -148,9 +152,9 @@ class WaveformPeaks {
 
   /// Builds a pyramid from mono 16-bit [samples].
   ///
-  /// [baseSamplesPerPixel] is the finest resolution retained. 128 at 44.1 kHz
-  /// is roughly 345 pairs per second, which is more than a 4K display can show
-  /// for a one-minute voice note.
+  /// [baseSamplesPerPixel] is the finest resolution that the pyramid keeps. A
+  /// value of 128 at 44.1 kHz is approximately 345 pairs each second. This is
+  /// more than a 4K display can show for a one-minute voice note.
   factory WaveformPeaks.fromSamples(
     Int16List samples, {
     required int sampleRate,
@@ -186,8 +190,8 @@ class WaveformPeaks {
     );
   }
 
-  /// Builds a pyramid from peaks that were computed elsewhere - by the C core,
-  /// or server-side by BBC `audiowaveform`.
+  /// Builds a pyramid from peaks that the C core computed, or that BBC
+  /// `audiowaveform` computed on the server.
   ///
   /// [base] is interleaved `[min, max, ...]` at [baseSamplesPerPixel].
   factory WaveformPeaks.fromInterleaved(

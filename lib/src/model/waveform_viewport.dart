@@ -2,10 +2,10 @@ import 'dart:typed_data';
 
 import 'waveform_peaks.dart';
 
-/// The slice of a pyramid a painter should draw, already resolved to a level.
+/// The slice of a pyramid for a painter to draw, already resolved to a level.
 ///
-/// Everything here is in painter coordinates, so a `CustomPainter` is a loop
-/// over [pairCount] with no arithmetic of its own:
+/// Everything here is in painter coordinates. As a result, a `CustomPainter` is
+/// a loop over [pairCount] with no arithmetic of its own:
 ///
 /// ```dart
 /// for (var i = 0; i < window.pairCount; i++) {
@@ -24,10 +24,10 @@ class PeakWindow {
     this.rms,
   });
 
-  /// The level's interleaved `[min, max, ...]` data. Read-only.
+  /// The interleaved `[min, max, ...]` data of the level. Read-only.
   final Int16List peaks;
 
-  /// Which mipmap level this came from. Useful for debug overlays.
+  /// The mipmap level that this data came from. Useful for debug overlays.
   final int level;
 
   /// Index of the first pair to draw, within [peaks].
@@ -38,14 +38,15 @@ class PeakWindow {
 
   /// Where the first pair starts, in viewport pixels.
   ///
-  /// Usually slightly negative: the window is snapped outward to whole pairs so
-  /// panning stays smooth instead of stepping.
+  /// Usually slightly negative. The viewport snaps the window outward to whole
+  /// pairs, so a pan stays smooth and does not step.
   final double xOfFirstPair;
 
   /// Width of one pair on screen, in pixels.
   final double pixelsPerPair;
 
-  /// One RMS value per pair, aligned with [peaks]. Null when unavailable.
+  /// One RMS value per pair, aligned with [peaks]. Null if the pyramid has
+  /// none.
   final Int16List? rms;
 
   /// Whether there is anything to draw.
@@ -63,10 +64,10 @@ class PeakWindow {
 
 /// Which part of a waveform is on screen, and at what zoom.
 ///
-/// Pure math and immutable: every gesture produces a new viewport rather than
-/// mutating one, so a host can drive it from any state management it likes.
-/// [startSample] is a `double` so panning is subpixel-smooth rather than
-/// stepping a sample at a time.
+/// This class is pure math and immutable. Every gesture produces a new viewport
+/// and changes none. As a result, a host can drive it from any state management
+/// that the host likes. [startSample] is a `double`, so a pan is
+/// subpixel-smooth and does not step one sample at a time.
 class WaveformViewport {
   const WaveformViewport({
     required this.startSample,
@@ -74,16 +75,18 @@ class WaveformViewport {
     required this.widthPx,
   });
 
-  /// Sample at the left edge. May be fractional, and may sit outside the audio.
+  /// Sample at the left edge. It can be fractional, and it can sit outside the
+  /// audio.
   final double startSample;
 
-  /// Zoom, as source samples per logical pixel. Smaller is more zoomed in.
+  /// Zoom, as source samples per logical pixel. A smaller value is a closer
+  /// zoom.
   final double samplesPerPixel;
 
   /// Width of the drawing surface, in logical pixels.
   final double widthPx;
 
-  /// A viewport showing the whole of [peaks] across [widthPx].
+  /// A viewport that shows the whole of [peaks] across [widthPx].
   factory WaveformViewport.fitted(WaveformPeaks peaks, double widthPx) {
     final span = peaks.lengthInSamples <= 0 ? 1 : peaks.lengthInSamples;
     return WaveformViewport(
@@ -99,17 +102,17 @@ class WaveformViewport {
   /// Sample at the right edge.
   double get endSample => startSample + sampleSpan;
 
-  /// Where [sample] falls horizontally, in logical pixels.
+  /// The horizontal position of [sample], in logical pixels.
   double xForSample(num sample) => (sample - startSample) / samplesPerPixel;
 
-  /// Which sample sits under [x]. The inverse of [xForSample].
+  /// The sample under [x]. The inverse of [xForSample].
   double sampleAtX(double x) => startSample + x * samplesPerPixel;
 
   /// Picks a mipmap level and returns the slice to draw.
   ///
-  /// The window is snapped outward to whole pairs, so the first pair usually
-  /// begins slightly left of x=0. That is deliberate: clipping to the pair
-  /// boundary instead would make a pan visibly step.
+  /// This method snaps the window outward to whole pairs, so the first pair
+  /// usually starts slightly left of x=0. That is deliberate. A clip to the
+  /// pair boundary instead makes a pan visibly step.
   PeakWindow resolve(WaveformPeaks peaks) {
     final level = peaks.levelFor(samplesPerPixel);
     final levelSpp = peaks.samplesPerPixel(level);
@@ -129,10 +132,11 @@ class WaveformViewport {
     );
   }
 
-  /// Zooms by [factor] about [focusX], keeping the sample under that point put.
+  /// Zooms by [factor] about [focusX]. The sample under that point does not
+  /// move.
   ///
-  /// [factor] above 1 zooms in. Anchoring on the focus point is what makes a
-  /// pinch feel attached to the audio rather than to the widget.
+  /// A [factor] more than 1 zooms in. The anchor on the focus point is what
+  /// makes a pinch feel attached to the audio and not to the widget.
   WaveformViewport zoomedAt(double focusX, double factor) {
     if (factor <= 0) {
       throw ArgumentError.value(factor, 'factor', 'must be positive');
@@ -154,18 +158,19 @@ class WaveformViewport {
     widthPx: widthPx,
   );
 
-  /// Returns a copy with [widthPx] replaced, keeping the left edge and zoom.
+  /// Returns a copy with a new [widthPx]. The copy keeps the left edge and the
+  /// zoom.
   WaveformViewport resized(double width) => WaveformViewport(
     startSample: startSample,
     samplesPerPixel: samplesPerPixel,
     widthPx: width,
   );
 
-  /// Constrains zoom and scroll so the audio cannot be lost off-screen.
+  /// Constrains the zoom and the scroll, so the viewport always shows audio.
   ///
-  /// Zooming out past the whole file is clamped to fit; zooming in past
-  /// [WaveformPeaks.finestSamplesPerPixel] is clamped too, because there is no
-  /// finer data in memory to draw and the result would just be stretched.
+  /// This method clamps a zoom out past the whole file to a fit. It also clamps
+  /// a zoom in past [WaveformPeaks.finestSamplesPerPixel], because memory holds
+  /// no finer data to draw and the result is only a stretched picture.
   WaveformViewport clampedTo(WaveformPeaks peaks) {
     final total = peaks.lengthInSamples.toDouble();
     final width = widthPx <= 0 ? 1.0 : widthPx;

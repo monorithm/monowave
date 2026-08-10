@@ -1,27 +1,27 @@
 # monowave
 
-Headless audio for Flutter -- microphone capture, waveform peaks and non-destructive editing, from one C core across all six targets.
+monowave is headless audio for Flutter. It gives microphone capture, waveform peaks and non-destructive editing from one C core, across all six targets.
 
-Capture, peaks and non-destructive editing that hand back data instead of widgets.
-One C core, six Flutter targets, byte-identical output on every one.
+Capture, peaks and non-destructive editing return data instead of widgets.
+One C core supplies six Flutter targets, with byte-identical output on each one.
 
 ```bash
 flutter pub add monowave
 flutter config --enable-native-assets
 ```
 
-**New here? Start with [your first waveform](00-start/00-tutorial.md)** -- one guided build, from an empty project to a drawn waveform and a recording on disk.
+**New here? Start with [your first waveform](00-start/00-tutorial.md).** It is one guided build. It goes from an empty project to a waveform on screen and a recording on disk.
 
 ## The four kinds of page
 
-| | For when you want to |
+| | Use this page to |
 |---|---|
-| [Start](00-start/00-tutorial.md) | learn the package by building something with it |
-| [Recipes](10-recipes/00-decode-a-file.md) | get one specific job done |
-| [Concepts](20-concepts/00-what-is-monowave.md) | understand why it is shaped this way |
-| [Reference](30-reference/00-api-map.md) | look something up |
+| [Start](00-start/00-tutorial.md) | learn the package as you build something with it |
+| [Recipes](10-recipes/00-decode-a-file.md) | do one specific job |
+| [Concepts](20-concepts/00-what-is-monowave.md) | understand why the package has this shape |
+| [Reference](30-reference/00-api-map.md) | find a specific detail |
 
-Each page is one of those and not the others, which is what keeps them short.
+Each page is one of these four kinds and not the others. This rule keeps the pages short.
 
 ## Recipes
 
@@ -38,16 +38,16 @@ Each page is one of those and not the others, which is what keeps them short.
 
 ## Concepts
 
-- [What is monowave?](20-concepts/00-what-is-monowave.md) -- what the package does, what headless means here, and why one C core rather than six platform implementations.
-- [Architecture](20-concepts/90-architecture.md) -- why headless, why FFI rather than pigeon, how the WASM half is built, and what the pyramid costs.
+- [What is monowave?](20-concepts/00-what-is-monowave.md) -- what the package does, what headless means here, and why there is one C core and not six platform implementations.
+- [Architecture](20-concepts/90-architecture.md) -- why headless, why FFI and not Pigeon, how monowave builds the WASM half, and what the pyramid costs.
 
 ## Reference
 
-- [API map](30-reference/00-api-map.md) -- the public surface grouped by what it is for, and what is deliberately absent.
+- [API map](30-reference/00-api-map.md) -- the public surface in groups by what each part does, and what is deliberately absent.
 - [Platform notes](30-reference/10-platforms.md) -- what each of the six targets supports, what web cannot do, and the native-assets requirement.
 
 ---
 
-monowave is on [pub.dev](https://pub.dev/packages/monowave), and its API
+monowave is on [pub.dev](https://pub.dev/packages/monowave). The API
 signatures are at
 [pub.dev/documentation/monowave/latest](https://pub.dev/documentation/monowave/latest/).

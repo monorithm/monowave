@@ -4,23 +4,24 @@ import '../model/waveform_peaks.dart';
 
 /// Reader and writer for the BBC `audiowaveform` binary peak format.
 ///
-/// Being wire-compatible with the standard tool is the point: peaks can be
-/// precomputed server-side on upload and shipped to a client that owns no
-/// decoder at all. It also means monowave interoperates with the peaks.js
-/// ecosystem for free.
+/// Wire compatibility with the standard tool is the point. A server can
+/// precompute peaks on upload and send them to a client that owns no decoder at
+/// all. It also means that monowave interoperates with the peaks.js ecosystem
+/// at no cost.
 ///
 /// The layout is little-endian throughout:
 ///
 /// | Offset | Type   | Field                            |
 /// |--------|--------|----------------------------------|
 /// | 0      | int32  | version (1 or 2)                 |
-/// | 4      | uint32 | flags; bit 0 set means 8-bit data |
+/// | 4      | uint32 | flags                            |
 /// | 8      | int32  | sample rate                      |
 /// | 12     | int32  | samples per pixel                |
 /// | 16     | uint32 | length, in min/max pairs         |
 /// | 20     | int32  | channels (version 2 only)        |
 ///
-/// followed by `length * channels` interleaved min/max values.
+/// followed by `length * channels` interleaved min/max values. In the flags
+/// field, bit 0 set means 8-bit data.
 abstract final class WaveformDat {
   static const _headerV1 = 20;
   static const _headerV2 = 24;
@@ -28,10 +29,11 @@ abstract final class WaveformDat {
 
   /// Parses a `.dat` buffer into a peak pyramid.
   ///
-  /// Multi-channel files are mixed down: the min of the channel minima and the
-  /// max of the channel maxima. That preserves the true extremes of the moment,
-  /// which is what a single-lane waveform should show. Dual-lane rendering
-  /// would need the channels kept apart, and is deferred until something asks.
+  /// This method mixes a multi-channel file to mono: the min of the channel
+  /// minima and the max of the channel maxima. That preserves the true extremes
+  /// of the moment, which is what a single-lane waveform must show. A waveform
+  /// with two lanes needs the channels apart, and monowave defers it until
+  /// something asks for it.
   static WaveformPeaks decode(Uint8List bytes, {int? maxLevels}) {
     if (bytes.lengthInBytes < _headerV1) {
       throw const FormatException(
@@ -111,9 +113,9 @@ abstract final class WaveformDat {
 
   /// Serializes one [level] of [peaks] to a `.dat` buffer.
   ///
-  /// [bits] of 8 halves the size at the cost of the low byte, which is
-  /// imperceptible in a rendered waveform and is what makes peaks cheap enough
-  /// to store next to a message.
+  /// A [bits] value of 8 halves the size at the cost of the low byte. That loss
+  /// is imperceptible in a waveform on screen, and it is what makes peaks cheap
+  /// enough to store next to a message.
   static Uint8List encode(
     WaveformPeaks peaks, {
     int version = 2,

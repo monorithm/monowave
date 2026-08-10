@@ -2,27 +2,28 @@ import 'waveform_document.dart';
 
 /// Undo and redo over a [WaveformDocument].
 ///
-/// Snapshots rather than inverse operations, following the same reasoning
-/// monolens's `EditHistory` uses: undo is cheap precisely because an edit is a
-/// value. There is nothing to invert, and some edits have no inverse anyway -
-/// a fade destroys the samples it fades.
+/// This class keeps snapshots, not inverse operations. It follows the same
+/// reasoning as the `EditHistory` class of monolens. Undo is cheap precisely
+/// because an edit is a value. There is nothing to invert, and some edits have
+/// no inverse. A fade erases the samples that it fades.
 ///
 /// A document is a handful of regions, so a snapshot costs nothing. A hundred
 /// steps of history on a heavily cut file is still a few kilobytes.
 ///
-/// Deliberately not a `ChangeNotifier`: `lib/` must not import Flutter's widget
-/// layer, and a host can wrap this in whatever state management it already
-/// uses.
+/// This class is deliberately not a `ChangeNotifier`. `lib/` must not import
+/// the widget layer of Flutter. A host can wrap this class in the state
+/// management that it already uses.
 class EditHistory {
   EditHistory(WaveformDocument initial) : _stack = [initial];
 
-  /// How many steps back are kept. Older ones fall off the bottom.
+  /// How many steps back this class keeps. It removes older steps from the
+  /// bottom.
   static const maxDepth = 100;
 
   final List<WaveformDocument> _stack;
   int _cursor = 0;
 
-  /// The document as it stands.
+  /// The document as it is now.
   WaveformDocument get current => _stack[_cursor];
 
   /// Edits applied since construction, most recent last. For an undo menu.
@@ -31,13 +32,14 @@ class EditHistory {
   bool get canUndo => _cursor > 0;
   bool get canRedo => _cursor < _stack.length - 1;
 
-  /// Steps taken, not counting the initial state.
+  /// The number of steps taken. The initial state does not count.
   int get depth => _cursor;
 
   /// Applies [edit] and pushes the result.
   ///
-  /// Anything that had been undone is discarded - the usual branch-and-forget
-  /// behaviour, because keeping a tree would need UI nobody asked for.
+  /// This method erases every step that an undo reversed. This is the usual
+  /// branch-and-forget behavior. A tree of history needs a UI that nobody asked
+  /// for.
   WaveformDocument apply(WaveformEdit edit) {
     final next = current.applying(edit);
 
@@ -70,13 +72,13 @@ class EditHistory {
     return current;
   }
 
-  /// Label of the edit [undo] would reverse, for a menu item.
+  /// Label of the edit that [undo] reverses, for a menu item.
   String? get undoLabel => canUndo ? appliedLabels[_cursor - 1] : null;
 
-  /// Label of the edit [redo] would reapply.
+  /// Label of the edit that [redo] applies again.
   String? get redoLabel => canRedo ? appliedLabels[_cursor] : null;
 
-  /// Drops all history, keeping the current document as the new baseline.
+  /// Erases all history. The current document becomes the new baseline.
   void reset() {
     final keep = current;
     _stack

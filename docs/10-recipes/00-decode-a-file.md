@@ -1,6 +1,9 @@
 # Decode an audio file into peaks
 
-A decode turns an audio file into a `WaveformPeaks`: a pyramid of min/max pairs, plus the sample rate and length needed to place them on a timeline.
+A decode turns an audio file into a `WaveformPeaks`.
+This object is a pyramid of min/max pairs.
+The object also holds the sample rate and the length.
+You need these two values to place the pairs on a timeline.
 
 ```dart
 final monowave = MonowavePlatform.instance;
@@ -13,16 +16,22 @@ final peaks = await monowave.decodeFile(path);
 final peaks = await monowave.decodeBytes(bytes);
 ```
 
-Prefer `decodeFile` on native.
-The decoder never holds the whole file, so an audiobook is decoded without ever being resident in memory.
-`decodeBytes` is the only path on web, which has no filesystem.
+`decodeFile` is the better entry point on native.
+The decoder never holds the whole file.
+Thus `decodeFile` can decode an audiobook, and the full file never enters memory.
+On web, `decodeBytes` is the only path, because web has no filesystem.
 
 ## Choose a base resolution
 
-Both entry points take `baseSamplesPerPixel`, which sets the finest resolution the pyramid holds.
+Both entry points take `baseSamplesPerPixel`, which sets the finest resolution that the pyramid holds.
 
-The default of 128 is about 3 ms at 44.1 kHz -- fine enough that no sensible zoom outruns it, coarse enough that the pyramid stays small.
-Lower it only if you need to zoom past that, and know that it costs memory linearly.
+The default value is 128.
+At 44.1 kHz, this value is approximately 3 ms.
+This resolution is fine enough that no sensible zoom goes past it.
+This resolution is also coarse enough to keep the pyramid small.
+
+A lower value is necessary only for a zoom that goes finer than this resolution.
+A lower value costs memory linearly.
 
 ## Read the data
 
@@ -32,19 +41,26 @@ final Int16List? rms = peaks.rms(level);    // one value per pair, or null
 ```
 
 `view` is **zero-copy and not defensively copied**.
-On native it is a view straight into memory the C core owns, which is what keeps a three-hour recording off the Dart heap.
-Treat it as read-only: writing to it corrupts every level built above it.
+On native, `view` is a direct view into the memory that the C core owns.
+This behavior keeps a three-hour recording off the Dart heap.
 
-`rms` is a second series, aligned pair-for-pair with the peaks.
-It is null for pyramids built in Dart from raw samples; the C core always provides it.
+You must not write to the view.
+A write to the view corrupts every level built above it.
 
-You rarely pick a level yourself -- [drawing a waveform](./10-draw-a-waveform.md) shows `WaveformViewport` doing it for you.
-For why the reduction is min/max rather than an average, and what the pyramid buys, see [architecture](../20-concepts/90-architecture.md).
+`rms` is a second series that is aligned pair-for-pair with the peaks.
+`rms` is null for a pyramid that Dart builds from raw samples.
+A pyramid from the C core always has an `rms`.
+
+You rarely pick a level yourself.
+The recipe [drawing a waveform](./10-draw-a-waveform.md) shows how `WaveformViewport` picks the level for you.
+The [architecture](../20-concepts/90-architecture.md) page explains why the reduction uses min/max and not an average.
+That page also explains the benefit of the pyramid.
 
 ## Overlay an RMS core inside the peak hull
 
-Peaks say how far the audio went; RMS says how much of it there was.
-Drawing both is what makes a waveform read as a shape rather than as its outliers:
+Peaks show how far the audio went.
+RMS shows how much audio there was.
+If you draw both series, the waveform shows a shape and not only its outliers.
 
 ```dart
 final view = peaks.view(level);
@@ -61,11 +77,19 @@ if (rms != null) {
 peaks.dispose();   // idempotent; a no-op for Dart-built pyramids
 ```
 
-Peaks the C core allocated are backed by native memory, and `dispose` releases it.
-Any view handed out beforehand dangles afterwards, so drop those first -- reading a disposed pyramid throws a `StateError` rather than reading freed memory.
+Native memory holds the peaks that the C core allocated.
+`dispose` releases this memory.
 
-Web behaves the same from your side, for a reason worth knowing if you profile it: growing the WASM heap detaches every outstanding view, so the web binding copies the pyramid out and frees the native allocation immediately.
-Either way `dispose` is the correct thing to call.
+Before you call `dispose`, remove your references to every view from that pyramid.
+After the call, those views are no longer valid.
+A read of a disposed pyramid throws a `StateError`.
+The read does not touch freed memory.
+
+On web, the behavior from your side is the same.
+Each growth of the WASM heap detaches every outstanding view.
+Thus the web binding copies the pyramid out, and frees the native allocation immediately.
+When you profile the application, this mechanism is useful to know.
+On both platforms, a call to `dispose` is correct.
 
 ## Handle each failure distinctly
 
@@ -83,18 +107,25 @@ try {
 }
 ```
 
-The failure codes mirror the C core's, so the reason a decode failed survives the trip across the boundary rather than collapsing into one message.
+The failure codes mirror the codes of the C core.
+Thus the reason for a failed decode crosses the boundary, and does not collapse into one message.
 
 **AAC and M4A report `unsupportedFormat`.**
-That is a real gap -- it is what `record` produces by default on iOS.
-See [platform notes](../30-reference/10-platforms.md) for what is supported, and [voice notes](./80-send-a-voice-note.md) for the path that never decodes at all.
+This gap is real, because `record` produces this format by default on iOS.
+The [platform notes](../30-reference/10-platforms.md) page lists the supported formats.
+The [voice notes](./80-send-a-voice-note.md) recipe shows the path that never decodes.
 
 ## Load peaks you did not decode
 
-The BBC `audiowaveform` binary format produces a `WaveformPeaks` without touching an audio file:
+The BBC `audiowaveform` binary format produces a `WaveformPeaks`.
+This path does not touch an audio file.
 
 ```dart
 final peaks = WaveformDat.decode(bytes);
 ```
 
-Being wire-compatible with the standard tool means peaks can be precomputed on your server and shipped to a client that owns no decoder, and that monowave interoperates with the peaks.js ecosystem for free.
+This format makes monowave wire-compatible with the standard tool.
+This compatibility gives two results:
+
+- Your server can precompute the peaks and send them to a client that owns no decoder.
+- monowave interoperates with the peaks.js ecosystem at no cost.

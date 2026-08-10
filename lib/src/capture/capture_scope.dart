@@ -1,16 +1,17 @@
 import 'dart:typed_data';
 
-/// One hop of audio, already reduced by the audio thread.
+/// One hop of audio, which the audio thread already reduced.
 typedef CaptureFrame = ({int min, int max, int rms});
 
-/// A fixed-capacity rolling window of the most recent frames.
+/// A rolling window of the most recent frames, with a fixed capacity.
 ///
-/// What a live visualizer draws. It is a ring over a preallocated [Int16List]
-/// and it allocates nothing per frame - at 86 frames a second, a growable list
-/// would be 86 allocations a second forever, and the garbage would land in the
-/// same frame budget as the painting.
+/// A live visualizer draws this window. The window is a ring over a
+/// preallocated [Int16List], and it allocates nothing for each frame. At 86
+/// frames each second, a growable list makes 86 allocations each second, and
+/// it never stops.
+/// That garbage lands in the same frame budget as the paint operation.
 ///
-/// Index 0 is the oldest frame still retained; [length] is the newest.
+/// Index 0 is the oldest frame that the window keeps. [length] is the newest.
 class CaptureScope {
   CaptureScope({this.capacity = 256})
     : assert(capacity > 0),
@@ -18,7 +19,7 @@ class CaptureScope {
 
   static const _stride = 3;
 
-  /// How many frames are retained before the oldest is overwritten.
+  /// How many frames the window keeps before it overwrites the oldest frame.
   final int capacity;
 
   final Int16List _data;
@@ -26,14 +27,15 @@ class CaptureScope {
   int _start = 0;
   int _revision = 0;
 
-  /// Increments on every frame added.
+  /// Increases by one for each frame that the scope adds.
   ///
-  /// A painter must compare this rather than [length]: the scope is a ring that
-  /// mutates in place, so once it is full the length never changes again and a
-  /// `shouldRepaint` keyed on length silently stops repainting.
+  /// A painter must compare this value and not [length]. The scope is a ring
+  /// that changes in place. After the scope is full, the length never changes
+  /// again. A `shouldRepaint` that uses the length then stops the repaints,
+  /// with no error.
   int get revision => _revision;
 
-  /// Frames currently retained, at most [capacity].
+  /// Frames that the scope keeps now, at most [capacity].
   int get length => _length;
 
   bool get isEmpty => _length == 0;
@@ -74,17 +76,18 @@ class CaptureScope {
 
   /// The larger excursion of frame [index], from 0 to 1.
   ///
-  /// The usual input to a bar visualizer: it does not care which direction the
-  /// waveform went, only how far.
+  /// This value is the usual input to a bar visualizer. Such a visualizer does
+  /// not need the direction of the waveform, only the distance.
   double amplitudeAt(int index) {
     final low = minAt(index).abs();
     final high = maxAt(index).abs();
     return (low > high ? low : high) / fullScale;
   }
 
-  /// Every retained amplitude, oldest first.
+  /// Every amplitude that the scope keeps, oldest first.
   ///
-  /// Allocates, so call it once per painted frame rather than per bar.
+  /// This method allocates. Therefore, a caller must call it one time for each
+  /// painted frame, and not one time for each bar.
   Float32List amplitudes() {
     final out = Float32List(_length);
     for (var i = 0; i < _length; i++) {

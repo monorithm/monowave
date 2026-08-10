@@ -4,13 +4,20 @@
 
 | | Floor | Why |
 |---|---|---|
-| Dart SDK | 3.12.2 | The version Flutter 3.44.8 ships. |
-| Flutter | 3.35.0 | Build-hook support at the level monowave relies on. |
-| Native assets | Enabled | `flutter config --enable-native-assets`, once per machine. |
+| Dart SDK | 3.12.2 | The version that Flutter 3.44.8 ships. |
+| Flutter | 3.35.0 | Build-hook support at the level that monowave needs. |
+| Native assets | Enabled | `flutter config --enable-native-assets`, one time on each machine. |
 
-That flag is the main cost of building the native side with a Dart build hook rather than the classic FFI plugin template.
-What it buys is no CocoaPods pod, no Gradle plugin, no per-ABI binary in the package, and one build path for all five native targets.
-See [architecture](../20-concepts/90-architecture.md#how-the-native-side-is-built).
+monowave builds the native side with a Dart build hook, and not with the classic FFI plugin template.
+That flag is the main cost of this decision.
+The decision buys these properties:
+
+- no CocoaPods pod
+- no Gradle plugin
+- no per-ABI binary in the package
+- one build path for all five native targets
+
+[Architecture](../20-concepts/90-architecture.md#how-the-native-side-is-built) has the details.
 
 ## Support matrix
 
@@ -23,8 +30,9 @@ See [architecture](../20-concepts/90-architecture.md#how-the-native-side-is-buil
 | Linux | yes | yes | yes | yes |
 | Web | `decodeBytes` only | yes | no | no |
 
-Web has no filesystem, so `decodeFile` and `exportWav` are native-only -- feed `decodeBytes` instead.
-Capture on web is not implemented: `WasmMonowavePlatform.openCapture` throws rather than pretending otherwise.
+Web has no filesystem.
+Thus `decodeFile` and `exportWav` are native-only, and you use `decodeBytes` instead.
+monowave does not implement capture on web: `WasmMonowavePlatform.openCapture` throws, and it does not pretend otherwise.
 
 ## Formats
 
@@ -36,17 +44,23 @@ Capture on web is not implemented: `WasmMonowavePlatform.openCapture` throws rat
 | AAC / M4A | **no** -- reports `DecodeFailure.unsupportedFormat` |
 
 The AAC gap is real: it is what `record` produces by default on iOS.
-Supporting it needs a platform decoder, which would mean six implementations and exactly the drift this architecture exists to avoid.
+Support for AAC needs a platform decoder.
+A platform decoder means six implementations, and exactly the drift that this architecture exists to avoid.
 
-It is tolerable because the [voice-note path](../10-recipes/80-send-a-voice-note.md) never decodes at all -- the sender computes peaks at record time and ships them as metadata, so the common case never meets a decoder.
+The gap is tolerable because the [voice-note path](../10-recipes/80-send-a-voice-note.md) never decodes at all.
+The sender computes peaks at record time and ships them as metadata.
+Thus the common case never meets a decoder.
 
 Export is always 16-bit PCM WAV, on every target that has a filesystem.
 
 ## Permissions
 
-Monowave does not request the microphone permission.
-A headless package has no UI to explain why it is asking, and your app does -- and two requesters produce two prompts.
-Ask with whatever permission plugin you already have, then open a session.
+monowave does not request the microphone permission.
+A headless package has no UI that explains the reason for the request, and your application has one.
+Two requesters produce two prompts.
+
+Ask for the permission with the permission plugin that you already have.
+Then open a session.
 
 iOS `Info.plist`:
 
@@ -66,27 +80,35 @@ Android `AndroidManifest.xml`:
 <uses-permission android:name="android.permission.RECORD_AUDIO" />
 ```
 
-Linux and Windows do not gate microphone access at the app level.
+Linux and Windows do not restrict microphone access at the application level.
 
-`openCapture` throws `CaptureUnavailable` when the permission has not already been granted, rather than prompting.
+If the user did not already grant the permission, `openCapture` throws `CaptureUnavailable`.
+It does not show a prompt.
 
 ## Android
 
-`libmonowave.so` is built for `arm64-v8a`, `armeabi-v7a` and `x86_64`.
+The build makes `libmonowave.so` for `arm64-v8a`, `armeabi-v7a` and `x86_64`.
 
 ## Web
 
-The web binding loads `assets/monowave.wasm` through the Flutter asset bundle, so `rootBundle` finds it with no assumptions about how the app is served.
-The artifact ships committed rather than built during your build, so you need no C toolchain; it is bundled on all six targets even though only web reads it, because Flutter cannot scope an asset to one platform.
+The web binding loads `assets/monowave.wasm` through the Flutter asset bundle, so `rootBundle` finds it with no assumptions about how the application is served.
+The artifact ships as a committed file, and your build does not make it.
+Thus you need no C toolchain.
+The asset bundle contains the artifact on all six targets, but only web reads it.
+Flutter cannot scope an asset to one platform.
 
-One behavioural difference reaches your code.
-The web binding **copies** the pyramid out of the WASM heap where the native binding keeps a zero-copy view, so web pays a few hundred kilobytes for a normal recording.
+One behavioral difference reaches your code.
+The web binding **copies** the pyramid out of the WASM heap.
+The native binding keeps a zero-copy view.
+Thus web pays a few hundred kilobytes for a normal recording.
 `dispose()` is correct on both.
 [Architecture](../20-concepts/90-architecture.md) has the reasoning.
 
 ## Determinism
 
-The same C source, reached over `dart:ffi` natively and over WASM on web, produces **identical peaks** -- asserted on every build across ubuntu, macOS, Windows and the WASM binding, not assumed.
+The same C source produces **identical peaks** over `dart:ffi` on the native targets and over WASM on web.
+A test asserts this property on every build, across ubuntu, macOS, Windows and the WASM binding.
+This property is not an assumption.
 
-If you store peaks server-side and render them on several clients, this is the property you are relying on.
+If you store peaks server-side and draw them on several clients, you depend on this property.
 [Architecture](../20-concepts/90-architecture.md) describes the check.

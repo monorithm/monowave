@@ -4,10 +4,11 @@ import '../model/waveform_peaks.dart';
 import '../model/waveform_selection.dart';
 import '../model/waveform_timeline.dart';
 
-/// A slice of the source, with what to do to it on the way out.
+/// A slice of the source, with the operations to apply to it on the way out.
 ///
-/// Regions never hold audio - only a range in the source and a few numbers. An
-/// edit is a value, which is what makes both undo and preview cheap.
+/// A region never holds audio. It holds only a range in the source and a few
+/// numbers. An edit is a value, which is what makes both undo and preview
+/// cheap.
 class WaveformRegion {
   const WaveformRegion({
     required this.sourceStart,
@@ -21,10 +22,10 @@ class WaveformRegion {
   final int sourceStart;
   final int sourceEnd;
 
-  /// Linear amplitude multiplier. 1.0 leaves the audio alone.
+  /// Linear amplitude multiplier. 1.0 does not change the audio.
   final double gain;
 
-  /// Fade lengths in samples, applied at the region's own edges.
+  /// Fade lengths in samples. The region applies them at its own edges.
   final int fadeIn;
   final int fadeOut;
 
@@ -65,10 +66,10 @@ class WaveformRegion {
       'fades: $fadeIn/$fadeOut)';
 }
 
-/// One editing operation, as a value.
+/// One edit operation, as a value.
 ///
-/// Sealed so a renderer or an exporter can switch over the set exhaustively and
-/// the compiler catches a new kind that was not handled.
+/// This class is sealed, so a renderer or an exporter can switch over the whole
+/// set. The compiler then catches a new kind that the code does not handle.
 sealed class WaveformEdit {
   const WaveformEdit();
 
@@ -76,7 +77,7 @@ sealed class WaveformEdit {
   String get label;
 }
 
-/// Keeps [selection] and discards everything else.
+/// Keeps [selection] and removes everything else.
 final class TrimEdit extends WaveformEdit {
   const TrimEdit(this.selection);
   final WaveformSelection selection;
@@ -85,7 +86,7 @@ final class TrimEdit extends WaveformEdit {
   String get label => 'Trim';
 }
 
-/// Removes [selection], closing the gap.
+/// Removes [selection] and closes the gap.
 final class DeleteEdit extends WaveformEdit {
   const DeleteEdit(this.selection);
   final WaveformSelection selection;
@@ -94,10 +95,10 @@ final class DeleteEdit extends WaveformEdit {
   String get label => 'Delete';
 }
 
-/// Cuts the region containing [sample] in two, changing nothing audible.
+/// Cuts the region that contains [sample] in two. Nothing audible changes.
 ///
-/// Useful on its own only as a setup move: it gives the next edit an edge to
-/// act on.
+/// On its own, this edit is useful only as preparation. It gives the next edit
+/// an edge to act on.
 final class SplitEdit extends WaveformEdit {
   const SplitEdit(this.sample);
   final int sample;
@@ -106,7 +107,7 @@ final class SplitEdit extends WaveformEdit {
   String get label => 'Split';
 }
 
-/// Scales everything overlapping [selection] by [gain].
+/// Scales every region that overlaps [selection] by [gain].
 final class GainEdit extends WaveformEdit {
   const GainEdit(this.selection, this.gain);
   final WaveformSelection selection;
@@ -116,7 +117,7 @@ final class GainEdit extends WaveformEdit {
   String get label => 'Gain';
 }
 
-/// Fades the edges of whatever overlaps [selection].
+/// Fades the edges of every region that overlaps [selection].
 final class FadeEdit extends WaveformEdit {
   const FadeEdit(this.selection, {this.fadeIn = 0, this.fadeOut = 0});
   final WaveformSelection selection;
@@ -127,10 +128,10 @@ final class FadeEdit extends WaveformEdit {
   String get label => 'Fade';
 }
 
-/// An arrangement of the source: what would be written if it were exported now.
+/// An arrangement of the source. An export now writes exactly this arrangement.
 ///
-/// Non-destructive. Nothing here decodes, copies or mutates audio; the source
-/// is untouched until an export reads it.
+/// The document is non-destructive. Nothing here decodes, copies or changes
+/// audio. The source stays untouched until an export reads it.
 class WaveformDocument {
   const WaveformDocument(this.regions);
 
@@ -150,10 +151,10 @@ class WaveformDocument {
   Duration durationIn(WaveformTimeline timeline) =>
       timeline.timeAt(lengthInSamples);
 
-  /// Where [outputSample] came from, or null past the end.
+  /// Where [outputSample] came from. Null past the end.
   ///
-  /// The output timeline and the source timeline diverge as soon as anything is
-  /// deleted, and confusing the two is the classic editing bug.
+  /// The output timeline and the source timeline diverge as soon as an edit
+  /// removes audio. Confusion between the two is the classic edit bug.
   int? sourceOf(int outputSample) {
     var remaining = outputSample;
     for (final region in regions) {
@@ -163,7 +164,7 @@ class WaveformDocument {
     return null;
   }
 
-  /// Applies [edit], returning a new document. Never mutates this one.
+  /// Applies [edit] and returns a new document. This document never changes.
   WaveformDocument applying(WaveformEdit edit) => switch (edit) {
     TrimEdit(:final selection) => _keepOnly(selection),
     DeleteEdit(:final selection) => _remove(selection),
@@ -263,15 +264,15 @@ class WaveformDocument {
     ]);
   }
 
-  /// Peaks for the edited result, derived from [source] without decoding.
+  /// Peaks for the edited result, derived from [source] with no decode.
   ///
-  /// Concatenates each region's slice of the source's finest level and scales
-  /// by gain, so the waveform updates the moment an edit is applied instead of
-  /// after a round trip through the decoder. This is the payoff of keeping
-  /// edits non-destructive.
+  /// This method concatenates the slice of each region from the finest level of
+  /// the source, and scales it by gain. As a result, the waveform on screen
+  /// updates the moment that a host applies an edit, and not after a round trip
+  /// through the decoder. This is the payoff of non-destructive edits.
   ///
-  /// Fades are not reflected: they act over samples, and the finest level is
-  /// 128 samples wide, so a typical fade is narrower than one bar.
+  /// The peaks do not show fades. A fade acts over samples, and the finest
+  /// level is 128 samples wide, so a typical fade is narrower than one bar.
   WaveformPeaks previewPeaks(WaveformPeaks source) {
     final spp = source.finestSamplesPerPixel;
     final view = source.view(0);

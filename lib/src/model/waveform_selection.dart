@@ -3,11 +3,12 @@ import 'waveform_timeline.dart';
 
 /// A range of audio, in source samples.
 ///
-/// Sample space rather than pixels or fractions, so a selection survives a
-/// zoom, a resize and a rotation without drifting. Immutable: every gesture
-/// produces a new value, which is also what makes undo cheap later.
+/// This range is in sample space, not in pixels or fractions. As a result, a
+/// selection survives a zoom, a resize and a rotation, and it does not drift.
+/// The class is immutable. Every gesture produces a new value, which is also
+/// what makes undo cheap later.
 class WaveformSelection {
-  /// Normalizes so [start] is never after [end].
+  /// Normalizes the range, so [start] is never after [end].
   factory WaveformSelection(int start, int end) => start <= end
       ? WaveformSelection._(start, end)
       : WaveformSelection._(end, start);
@@ -17,7 +18,7 @@ class WaveformSelection {
   /// A selection of nothing, at the origin.
   static const empty = WaveformSelection._(0, 0);
 
-  /// A collapsed selection at [sample] - where a drag begins.
+  /// A collapsed selection at [sample]. A drag begins here.
   factory WaveformSelection.at(int sample) =>
       WaveformSelection._(sample, sample);
 
@@ -33,16 +34,16 @@ class WaveformSelection {
   Duration durationIn(WaveformTimeline timeline) =>
       timeline.timeAt(end) - timeline.timeAt(start);
 
-  /// Moves [end] to [sample], keeping [start] anchored. A drag.
+  /// Moves [end] to [sample] and keeps [start] anchored. This is a drag.
   WaveformSelection extendedTo(int sample) => WaveformSelection(start, sample);
 
-  /// Moves the nearer edge to [sample]. Dragging a handle.
+  /// Moves the nearer edge to [sample]. This is a drag of a handle.
   WaveformSelection withNearestEdgeAt(int sample) =>
       (sample - start).abs() <= (sample - end).abs()
       ? WaveformSelection(sample, end)
       : WaveformSelection(start, sample);
 
-  /// Slides the whole range by [samples], without changing its length.
+  /// Slides the whole range by [samples]. The length does not change.
   WaveformSelection shiftedBy(int samples) =>
       WaveformSelection._(start + samples, end + samples);
 
@@ -63,21 +64,23 @@ class WaveformSelection {
   String toString() => 'WaveformSelection($start..$end)';
 }
 
-/// Where a cut should actually land, given peaks alone.
+/// The best place for a cut, from peaks alone.
 ///
-/// **These snap to the finest level's resolution, not to a sample.** With a
-/// 128-sample base at 44.1 kHz that is about 3 ms - inaudible for a trim point,
-/// and worth stating plainly because "zero crossing" usually implies exactness.
-/// Sample-exact snapping would mean re-reading the source, which is a decode
-/// per gesture; it can be added as a C entry point if something needs it.
+/// **These methods snap to the resolution of the finest level, not to a
+/// sample.** With a 128-sample base at 44.1 kHz, that distance is
+/// approximately 3 ms. It is inaudible for a trim point. This text is explicit
+/// about it, because "zero crossing" usually implies exactness. A sample-exact
+/// snap must read the source again, which is one decode per gesture. If
+/// something needs it, monowave can add it as a C entry point.
 abstract final class WaveformSnap {
-  /// The nearest bucket whose extremes straddle zero.
+  /// The nearest bucket with extremes that straddle zero.
   ///
-  /// A bucket with `min <= 0 <= max` contains at least one sign change, so
-  /// cutting inside it lands on or beside a zero crossing and avoids the click
-  /// that cutting mid-swing produces.
+  /// A bucket with `min <= 0 <= max` contains at least one sign change. A cut
+  /// inside it lands on or beside a zero crossing. It also avoids the click
+  /// that a cut mid-swing produces.
   ///
-  /// Returns [sample] unchanged if nothing within [searchRadius] qualifies.
+  /// If nothing within [searchRadius] qualifies, this method returns [sample]
+  /// unchanged.
   static int toZeroCrossing(
     WaveformPeaks peaks,
     int sample, {
@@ -85,10 +88,10 @@ abstract final class WaveformSnap {
   }) =>
       _search(peaks, sample, searchRadius, (min, max) => min <= 0 && max >= 0);
 
-  /// The quietest bucket within [searchRadius] - where a cut is least audible.
+  /// The quietest bucket within [searchRadius]. A cut here is least audible.
   ///
-  /// Usually the better default for trimming speech: silence between words is a
-  /// more forgiving edit point than a zero crossing mid-syllable.
+  /// This is usually the better default for a trim of speech. Silence between
+  /// words is a more forgiving edit point than a zero crossing mid-syllable.
   static int toQuietest(
     WaveformPeaks peaks,
     int sample, {

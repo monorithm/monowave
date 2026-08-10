@@ -1,7 +1,9 @@
 # Draw a live meter
 
-Draw from `session.scope`, a fixed-capacity rolling window over a preallocated buffer.
-It allocates nothing per frame: at 86 frames a second a growable list would be 86 allocations a second forever, and the garbage would land in the same frame budget as the painting.
+Draw from `session.scope`, which is a fixed-capacity rolling window over a preallocated buffer.
+The scope allocates nothing for each frame.
+At 86 frames each second, a growable list makes 86 allocations each second, and it never stops.
+That garbage lands in the same frame budget as the paint operation.
 
 ```dart
 final scope = session.scope;
@@ -11,14 +13,18 @@ for (var i = 0; i < scope.length; i++) {
 }
 ```
 
-Index 0 is the oldest frame still retained.
-`amplitudeAt` gives the larger excursion of the frame, which is the usual input to a bar visualizer -- it does not care which direction the waveform went, only how far.
-`minAt`, `maxAt` and `rmsAt` are there if you want the asymmetry.
+Index 0 is the oldest frame that the scope still keeps.
+`amplitudeAt` gives the larger excursion of the frame, which is the usual input to a bar visualizer.
+The larger excursion does not show the direction of the waveform, only the distance.
+If you want the asymmetry, use `minAt`, `maxAt` and `rmsAt`.
 
 :::caution[Repaint on `revision`, not `length`]
-The scope is a ring that mutates in place.
-Once it is full, `length` never changes again -- so a `shouldRepaint` keyed on it silently stops repainting and the meter freezes while audio keeps arriving.
-`scope.revision` increments on every frame added, which is what you compare.
+The scope is a ring that changes in place.
+After the ring is full, `length` never changes again.
+A `shouldRepaint` that compares `length` therefore stops the repaint and gives no error.
+The meter freezes while audio continues to arrive.
+`scope.revision` increments for each frame that the scope adds.
+Compare `scope.revision` in `shouldRepaint`.
 :::
 
 ```dart
@@ -26,4 +32,5 @@ Once it is full, `length` never changes again -- so a `shouldRepaint` keyed on i
 bool shouldRepaint(MeterPainter old) => old.revision != revision;
 ```
 
-To pump a meter in a test, fill the scope with a known level using `emitTone` -- see [testing](./90-test-without-hardware.md).
+To pump a meter in a test, use `emitTone` to fill the scope with a known level.
+For more information, read [testing](./90-test-without-hardware.md).

@@ -1,7 +1,9 @@
 # Edit without touching the audio
 
-Nothing in this layer decodes, copies or mutates audio.
-A document is a list of regions -- a range in the source plus a gain and two fade lengths -- and the source is read exactly once, at export.
+Nothing in this layer decodes, copies or changes audio.
+A document is a list of regions.
+Each region is a range in the source, plus a gain and two fade lengths.
+monowave reads the source exactly one time, at export.
 
 ```dart
 var doc = WaveformDocument.of(peaks);   // the whole source, unedited
@@ -10,8 +12,9 @@ doc.lengthInSamples;          // length of the result
 doc.sourceOf(outputSample);   // where an output sample came from, or null
 ```
 
-`sourceOf` matters more than it looks.
-The output timeline and the source timeline diverge the moment anything is deleted, and confusing the two is the classic editing bug.
+`sourceOf` is more important than it looks.
+The output timeline and the source timeline diverge the moment that you remove any audio.
+If you use one timeline in place of the other, the result is the classic bug in an editor.
 
 ## Apply an edit
 
@@ -23,14 +26,16 @@ doc = doc.applying(GainEdit(selection, 1.5));            // scale what overlaps
 doc = doc.applying(FadeEdit(selection, fadeIn: 2048, fadeOut: 2048));
 ```
 
-`applying` never mutates the receiver -- it returns a new document.
+`applying` never changes the receiver.
+It returns a new document instead.
 
-`SplitEdit` changes nothing audible on its own.
-It is a setup move: it gives the next edit an edge to act on.
+`SplitEdit` alone changes nothing that you can hear.
+It is a preparation step, because it gives the next edit an edge to use.
 
 ## Switch over the edits exhaustively
 
-The five edits are a **sealed** set, so the compiler catches a kind a renderer or exporter did not handle:
+The five edits are a **sealed** set.
+Thus the compiler catches a kind of edit that a renderer or an exporter does not handle:
 
 ```dart
 String describe(WaveformEdit edit) => switch (edit) {
@@ -48,10 +53,13 @@ String describe(WaveformEdit edit) => switch (edit) {
 final preview = doc.previewPeaks(peaks);
 ```
 
-This derives the edited waveform by concatenating each region's slice of the source's finest level and scaling by gain, so the display updates the instant an edit lands rather than after a round trip through the decoder.
+This call derives the edited waveform.
+It concatenates the slice of each region from the finest level of the source, and scales the slice by the gain.
+The waveform on screen therefore updates the moment that an edit lands, and not after a round trip through the decoder.
 
-Fades are not reflected in the preview.
-They act over samples, and the finest level is 128 samples wide, so a typical fade is narrower than one bar.
+The preview does not show the fades.
+A fade acts over samples, and the finest level is 128 samples wide.
+A typical fade is therefore narrower than one bar.
 
 ## Wire undo and redo
 
@@ -70,10 +78,13 @@ history.redoLabel;
 history.depth;        // steps taken, not counting the initial state
 ```
 
-Applying an edit after undoing discards what had been undone -- the usual branch-and-forget behaviour.
+If you apply an edit after an undo, the history erases the steps that the undo removed.
+The history has the usual branch-and-forget behavior.
 
-`EditHistory` is deliberately **not** a `ChangeNotifier`: `lib/` must not import Flutter's widget layer, so wrap it in whatever state management you already use.
-[Architecture](../20-concepts/90-architecture.md) explains why undo is snapshots rather than inverse operations.
+`EditHistory` is deliberately **not** a `ChangeNotifier`.
+The code in `lib/` must not import the widget layer of Flutter.
+Wrap `EditHistory` in the state management that your application already uses.
+[Architecture](../20-concepts/90-architecture.md) explains why undo uses snapshots and not inverse operations.
 
 ## Export
 
@@ -85,6 +96,8 @@ await monowave.exportWav(
 );
 ```
 
-Output is always WAV, 16-bit PCM, which is also what capture writes -- so a recording round-trips through the editor without a second format in play.
+The output is always 16-bit PCM WAV, which is also the format that capture writes.
+You can therefore record, edit and export audio with only one format.
 
-An empty document is refused rather than producing a zero-length file, and export is not available on web, which has no filesystem to write to.
+`exportWav` refuses an empty document, and does not write a zero-length file.
+Export is not available on web, because web has no filesystem to write to.

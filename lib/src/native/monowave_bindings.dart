@@ -14,10 +14,11 @@ import 'dart:ffi';
 
 import 'package:ffi/ffi.dart' show Utf8;
 
-/// Opaque handle to a pyramid the C side owns.
+/// Opaque handle to a pyramid that the C side owns.
 final class WfPeaks extends Opaque {}
 
-/// The C core's ABI version. Bumped whenever a signature in `src/` changes.
+/// The ABI version of the C core. It increases each time a signature in `src/`
+/// changes.
 @Native<Int32 Function()>(symbol: 'wf_abi_version')
 external int wfAbiVersion();
 
@@ -89,8 +90,9 @@ final class WfCapture extends Opaque {}
 
 /// One reduced hop: `{int16 min, int16 max, int16 rms}`.
 ///
-/// Three int16s with alignment 2, so the struct is exactly 6 bytes with no
-/// padding and a drained block can be read as a flat Int16List.
+/// Three int16 values with alignment 2. As a result, the struct is exactly 6
+/// bytes with no padding, and a caller can read a drained block as a flat
+/// Int16List.
 final class WfFrame extends Struct {
   @Int16()
   external int min;
@@ -157,12 +159,12 @@ external int wfCaptureDrain(
   int max,
 );
 
-/// Drain scratch the session owns, rather than a buffer allocated here.
+/// Drain scratch that the session owns, not a buffer that Dart allocates here.
 ///
-/// A `calloc` on this side would have to be freed on this side, and a session
-/// that is dropped without `dispose()` never gets the chance - the finalizer
-/// over [wfCaptureDestroy] can only release what the C struct owns. Sizes come
-/// from C too, so the two cannot drift.
+/// A `calloc` on this side must also be released on this side. A session that
+/// the garbage collector collects without a call to `dispose()` never gets that
+/// chance. The finalizer over [wfCaptureDestroy] can release only what the C
+/// struct owns. The sizes come from C too, so the two cannot drift.
 @Native<Pointer<WfFrame> Function(Pointer<WfCapture>)>(
   symbol: 'wf_capture_scratch',
 )
@@ -171,8 +173,8 @@ external Pointer<WfFrame> wfCaptureScratch(Pointer<WfCapture> capture);
 @Native<Int32 Function(Pointer<WfCapture>)>(symbol: 'wf_capture_scratch_frames')
 external int wfCaptureScratchFrames(Pointer<WfCapture> capture);
 
-/// The PCM equivalent. `nullptr`, with a size of zero, when the session keeps
-/// no audio.
+/// The PCM equivalent. If the session keeps no audio, this is `nullptr` with a
+/// size of zero.
 @Native<Pointer<Int16> Function(Pointer<WfCapture>)>(
   symbol: 'wf_capture_pcm_scratch',
 )
@@ -183,10 +185,11 @@ external Pointer<Int16> wfCapturePcmScratch(Pointer<WfCapture> capture);
 )
 external int wfCapturePcmScratchSamples(Pointer<WfCapture> capture);
 
-/// Sessions the C core has created and not yet destroyed.
+/// The number of sessions that the C core created and did not yet remove.
 ///
-/// The seam the finalizer test asserts on: a session dropped without `dispose()`
-/// must eventually bring this back down on its own.
+/// This is the seam that the finalizer test asserts on. A session that the
+/// garbage collector collects without a call to `dispose()` must decrease this
+/// count on its own, at a later time.
 @Native<Int32 Function()>(symbol: 'wf_capture_live')
 external int wfCaptureLive();
 
@@ -207,8 +210,8 @@ external Pointer<WfPeaks> wfCaptureTakePeaks(
   Pointer<Int32> outError,
 );
 
-/// The audio-thread entry point, exposed so tests can drive the realtime path
-/// with synthetic PCM and no microphone.
+/// The audio-thread entry point. monowave exposes it so that a test can drive
+/// the realtime path with synthetic PCM and no microphone.
 @Native<Void Function(Pointer<WfCapture>, Pointer<Int16>, Int32)>(
   symbol: 'wf_capture_feed',
 )
@@ -220,7 +223,8 @@ external void wfCaptureFeed(
 
 // --- Export -----------------------------------------------------------------
 
-/// One slice of the source to write out. Mirrors `wf_region` in `monowave.h`.
+/// One slice of the source to write. This struct mirrors `wf_region` in
+/// `monowave.h`.
 final class WfRegion extends Struct {
   // Doubles rather than Int64 for the offsets, for the same reason
   // wf_peaks_length returns one: an i64 reaches JavaScript as a BigInt.
@@ -248,8 +252,8 @@ external int wfExportWav(
 
 /// The linear gain multiplier for one frame of a region.
 ///
-/// Shared by the exporter and the renderer, so a preview and an export apply
-/// one curve rather than two that happen to agree.
+/// The exporter and the renderer share this function. As a result, a preview
+/// and an export apply one curve, and not two curves that happen to agree.
 @Native<Float Function(Int64, Int64, Int32, Int32)>(symbol: 'wf_envelope')
 external double wfEnvelope(int offset, int length, int fadeIn, int fadeOut);
 
@@ -316,7 +320,7 @@ external int wfRenderRead(
 
 // --- Playback ---------------------------------------------------------------
 
-/// Opaque handle to a render being fed to an audio device.
+/// Opaque handle to a render that feeds an audio device.
 final class WfPlayback extends Opaque {}
 
 @Native<
@@ -358,9 +362,10 @@ external Pointer<WfPlayback> wfPlaybackCreateMemory(
 @Native<Void Function(Pointer<WfPlayback>)>(symbol: 'wf_playback_destroy')
 external void wfPlaybackDestroy(Pointer<WfPlayback> playback);
 
-/// The audio-thread entry point, exposed so tests can drive the realtime path
-/// with no output device. `out` always comes back fully written; the return
-/// value is the frames that were real audio rather than silence.
+/// The audio-thread entry point. monowave exposes it so that a test can drive
+/// the realtime path with no output device. `out` always comes back fully
+/// written. The return value is the number of frames that were real audio and
+/// not silence.
 @Native<Int32 Function(Pointer<WfPlayback>, Pointer<Int16>, Int32)>(
   symbol: 'wf_playback_pull',
 )
@@ -417,26 +422,28 @@ external int wfPlaybackStart(Pointer<WfPlayback> playback);
 @Native<Int32 Function(Pointer<WfPlayback>)>(symbol: 'wf_playback_stop')
 external int wfPlaybackStop(Pointer<WfPlayback> playback);
 
-/// The address of [wfPeaksFree], for attaching to a [NativeFinalizer].
+/// The address of [wfPeaksFree], to attach to a [NativeFinalizer].
 final Pointer<NativeFinalizerFunction> wfPeaksFreeAddress =
     Native.addressOf<NativeFunction<Void Function(Pointer<WfPeaks>)>>(
       wfPeaksFree,
     ).cast();
 
-/// The address of [wfPlaybackDestroy], for attaching to a [NativeFinalizer].
+/// The address of [wfPlaybackDestroy], to attach to a [NativeFinalizer].
 ///
 /// `wf_playback_destroy` stops the device and joins the feeder thread before it
-/// frees anything, so a session collected without `dispose()` gives back the
-/// output device and the thread as well as the memory.
+/// releases anything. As a result, a session that the garbage collector
+/// collects without a call to `dispose()` releases the output device, the
+/// thread and the memory.
 final Pointer<NativeFinalizerFunction> wfPlaybackDestroyAddress =
     Native.addressOf<NativeFunction<Void Function(Pointer<WfPlayback>)>>(
       wfPlaybackDestroy,
     ).cast();
 
-/// The address of [wfCaptureDestroy], for attaching to a [NativeFinalizer].
+/// The address of [wfCaptureDestroy], to attach to a [NativeFinalizer].
 ///
-/// `wf_capture_destroy` stops the device before it frees anything, so a session
-/// collected without `dispose()` releases the microphone as well as the memory.
+/// `wf_capture_destroy` stops the device before it releases anything. As a
+/// result, a session that the garbage collector collects without a call to
+/// `dispose()` releases the microphone as well as the memory.
 final Pointer<NativeFinalizerFunction> wfCaptureDestroyAddress =
     Native.addressOf<NativeFunction<Void Function(Pointer<WfCapture>)>>(
       wfCaptureDestroy,
