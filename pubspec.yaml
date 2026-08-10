@@ -1,6 +1,6 @@
 name: monowave
 description: "Headless audio for Flutter: microphone capture, waveform peaks, and non-destructive editing, from one C core across all six Flutter targets."
-version: 0.3.1
+version: 0.4.0
 # No `homepage:`. It pointed at the repository, and pub.dev renders the two as
 # separate links -- so the package page carried the same URL twice. The docs
 # site the old comment was waiting for now exists, so it goes in the field that
