@@ -5,6 +5,7 @@ import 'package:flutter/services.dart' show rootBundle;
 
 import '../capture/capture_session.dart';
 import '../playback/playback_session.dart';
+import '../playback/web_playback_session.dart';
 import '../edit/waveform_document.dart';
 import '../model/waveform_peaks.dart';
 import 'monowave_platform.dart';
@@ -121,6 +122,9 @@ extension type _Core._(JSObject _o) implements JSObject {
 
   @JS('wf_render_channels')
   external int renderChannels(int render);
+
+  @JS('wf_render_sample_rate')
+  external int renderSampleRate(int render);
 
   external int malloc(int bytes);
   external void free(int ptr);
@@ -295,7 +299,26 @@ class WasmMonowavePlatform implements MonowavePlatform {
   Future<Int16List> renderPcmBytes({
     required Uint8List bytes,
     required WaveformDocument document,
-  }) async {
+  }) async => (await _render(bytes, document)).pcm;
+
+  @override
+  Future<PlaybackSession> openPlaybackBytes({
+    required Uint8List bytes,
+    required WaveformDocument document,
+  }) => WebPlaybackSession.open(
+    bytes: bytes,
+    document: document,
+    render: _render,
+  );
+
+  /// The render, with the shape of what it produced.
+  ///
+  /// A graph cannot be built without the channel count and the rate, and the
+  /// renderer is the only thing that knows them.
+  Future<({Int16List pcm, int channels, int sampleRate})> _render(
+    Uint8List bytes,
+    WaveformDocument document,
+  ) async {
     if (document.isEmpty) {
       throw const MonowaveDecodeException(
         DecodeFailure.empty,
@@ -355,6 +378,7 @@ class WasmMonowavePlatform implements MonowavePlatform {
       }
 
       final channels = core.renderChannels(render);
+      final sampleRate = core.renderSampleRate(render);
       final total = core.renderLengthFrames(render).toInt() * channels;
       final out = Int16List(total);
 
@@ -386,7 +410,11 @@ class WasmMonowavePlatform implements MonowavePlatform {
         written += samples;
       }
 
-      return written == total ? out : Int16List.sublistView(out, 0, written);
+      return (
+        pcm: written == total ? out : Int16List.sublistView(out, 0, written),
+        channels: channels,
+        sampleRate: sampleRate,
+      );
     } finally {
       if (render != 0) core.renderClose(render);
       if (block != 0) core.free(block);

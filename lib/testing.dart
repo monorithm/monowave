@@ -213,6 +213,21 @@ class FakeMonowavePlatform implements MonowavePlatform {
     return session;
   }
 
+  /// Every byte-playback requested, as (byteLength, document).
+  final List<(int, WaveformDocument)> bytePlaybacks = [];
+
+  @override
+  Future<PlaybackSession> openPlaybackBytes({
+    required Uint8List bytes,
+    required WaveformDocument document,
+  }) async {
+    bytePlaybacks.add((bytes.length, document));
+    return openPlayback(
+      sourcePath: '${bytes.length} bytes',
+      document: document,
+    );
+  }
+
   /// Installs this as the platform. Call [uninstall] in `tearDown`.
   void install() => MonowavePlatform.instance = this;
 

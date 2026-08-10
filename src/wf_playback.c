@@ -216,29 +216,20 @@ static void wf_playback_callback(ma_device *device, void *output,
 }
 #endif
 
-wf_playback *wf_playback_create(const char *src_path, const wf_region *regions,
-                                int32_t region_count, int32_t ring_frames,
-                                int32_t *out_error) {
-  int32_t ignored = 0;
-  if (out_error == NULL) out_error = &ignored;
-
-  if (ring_frames <= 0) {
-    *out_error = WF_ERR_ARGUMENT;
-    return NULL;
-  }
-
+/// Wraps an open render in a ring, a feeder and a device.
+///
+/// Shared by the two create entry points, so a playback over a file and one
+/// over bytes differ in nothing but where the audio came from. Takes ownership
+/// of `render`, including on failure.
+static wf_playback *wf_playback_wrap(wf_render *render, int32_t ring_frames,
+                                     int32_t *out_error) {
   wf_playback *playback = (wf_playback *)calloc(1, sizeof(wf_playback));
   if (playback == NULL) {
+    wf_render_close(render);
     *out_error = WF_ERR_MEMORY;
     return NULL;
   }
-
-  playback->render =
-      wf_render_open(src_path, regions, region_count, out_error);
-  if (playback->render == NULL) {
-    free(playback);
-    return NULL;
-  }
+  playback->render = render;
 
   playback->sample_rate = wf_render_sample_rate(playback->render);
   playback->channels = wf_render_channels(playback->render);
@@ -275,6 +266,48 @@ wf_playback *wf_playback_create(const char *src_path, const wf_region *regions,
   *out_error = WF_OK;
   return playback;
 }
+
+wf_playback *wf_playback_create_memory(const void *data, size_t size,
+                                       const wf_region *regions,
+                                       int32_t region_count,
+                                       int32_t ring_frames,
+                                       int32_t *out_error) {
+  int32_t ignored = 0;
+  if (out_error == NULL) out_error = &ignored;
+
+  if (ring_frames <= 0) {
+    *out_error = WF_ERR_ARGUMENT;
+    return NULL;
+  }
+
+  wf_render *render =
+      wf_render_open_memory(data, size, regions, region_count, out_error);
+  if (render == NULL) return NULL;
+
+  return wf_playback_wrap(render, ring_frames, out_error);
+}
+
+#ifndef WF_NO_STDIO
+
+wf_playback *wf_playback_create(const char *src_path, const wf_region *regions,
+                                int32_t region_count, int32_t ring_frames,
+                                int32_t *out_error) {
+  int32_t ignored = 0;
+  if (out_error == NULL) out_error = &ignored;
+
+  if (ring_frames <= 0) {
+    *out_error = WF_ERR_ARGUMENT;
+    return NULL;
+  }
+
+  wf_render *render =
+      wf_render_open(src_path, regions, region_count, out_error);
+  if (render == NULL) return NULL;
+
+  return wf_playback_wrap(render, ring_frames, out_error);
+}
+
+#endif  // WF_NO_STDIO
 
 int32_t wf_playback_pull(wf_playback *playback, int16_t *out, int32_t frames) {
   if (playback == NULL || out == NULL || frames <= 0) return 0;

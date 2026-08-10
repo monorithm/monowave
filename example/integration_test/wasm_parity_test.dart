@@ -45,7 +45,7 @@ void main() {
   testWidgets('the WASM core reports the same ABI as the native core', (
     tester,
   ) async {
-    expect(MonowavePlatform.instance.abiVersion(), 13);
+    expect(MonowavePlatform.instance.abiVersion(), 14);
   });
 
   testWidgets('the WASM core reduces identically to the native core', (
@@ -148,6 +148,95 @@ void main() {
         document: document,
       ),
       throwsA(isA<MonowaveDecodeException>()),
+    );
+  });
+
+  // Web playback. The browser will not start an AudioContext without a user
+  // gesture, and a driven test has none - so `play` is asserted the way the
+  // native "no device" test is: it either works or it reports why, and what it
+  // must not do is hang. Everything that does not need the speaker is asserted
+  // outright.
+  testWidgets('the web binding opens a playback session', (tester) async {
+    const document = WaveformDocument([
+      WaveformRegion(sourceStart: 0, sourceEnd: 22050),
+    ]);
+
+    final session = await MonowavePlatform.instance.openPlaybackBytes(
+      bytes: _sine(),
+      document: document,
+    );
+    addTearDown(session.dispose);
+
+    expect(session.duration, const Duration(milliseconds: 500));
+    expect(session.position, Duration.zero);
+    expect(session.isPlaying, isFalse);
+    expect(session.isFinished, isFalse);
+    // No feeder on web, so no race for it to lose.
+    expect(session.underruns, 0);
+  });
+
+  testWidgets('the web session seeks and swaps documents', (tester) async {
+    const before = WaveformDocument([
+      WaveformRegion(sourceStart: 0, sourceEnd: 44100),
+    ]);
+    const after = WaveformDocument([
+      WaveformRegion(sourceStart: 0, sourceEnd: 22050, gain: 0.5),
+    ]);
+
+    final session = await MonowavePlatform.instance.openPlaybackBytes(
+      bytes: _sine(),
+      document: before,
+    );
+    addTearDown(session.dispose);
+
+    await session.seek(const Duration(milliseconds: 750));
+    expect(session.position, const Duration(milliseconds: 750));
+
+    await session.seek(const Duration(hours: 1));
+    expect(session.position, session.duration, reason: 'a seek past the end');
+
+    await session.seek(const Duration(milliseconds: 100));
+    await session.setDocument(after);
+
+    expect(session.document, same(after));
+    expect(session.duration, const Duration(milliseconds: 500));
+    expect(
+      session.position,
+      const Duration(milliseconds: 100),
+      reason: 'the playhead keeps its output position across a swap',
+    );
+  });
+
+  testWidgets('the web session reports a blocked audio context', (
+    tester,
+  ) async {
+    final session = await MonowavePlatform.instance.openPlaybackBytes(
+      bytes: _sine(),
+      document: const WaveformDocument([
+        WaveformRegion(sourceStart: 0, sourceEnd: 4410),
+      ]),
+    );
+    addTearDown(session.dispose);
+
+    try {
+      await session.play();
+      expect(session.isPlaying, isTrue);
+      await session.pause();
+      expect(session.isPlaying, isFalse);
+    } on PlaybackUnavailable catch (error) {
+      // Autoplay policy. The message has to say what to do about it.
+      expect(session.isPlaying, isFalse);
+      expect(error.message, contains('user gesture'));
+    }
+  });
+
+  testWidgets('the web session refuses an empty document', (tester) async {
+    await expectLater(
+      MonowavePlatform.instance.openPlaybackBytes(
+        bytes: _sine(),
+        document: const WaveformDocument([]),
+      ),
+      throwsA(isA<PlaybackUnavailable>()),
     );
   });
 }

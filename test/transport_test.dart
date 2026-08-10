@@ -494,6 +494,80 @@ void main() {
     });
   });
 
+  group('playing from bytes', () {
+    // The path web has to use, exercised natively. Web has no filesystem, so
+    // openPlaybackBytes is the only way in there - and on native it must be the
+    // same engine, or the two diverge in something a host can feel.
+    test('plays the same samples as playing from a path', () async {
+      const document = WaveformDocument([
+        WaveformRegion(sourceStart: 0, sourceEnd: 9000, fadeIn: 300),
+        WaveformRegion(sourceStart: 20000, sourceEnd: 24000, gain: 0.4),
+      ]);
+
+      final fromPath = await open(document);
+      final fromBytes = await FfiPlaybackSession.openBytes(
+        bytes: File(sourcePath).readAsBytesSync(),
+        document: document,
+      );
+      addTearDown(fromBytes.dispose);
+
+      expect(fromBytes.duration, fromPath.duration);
+
+      _waitForRing(fromPath, _block);
+      _waitForRing(fromBytes, _block);
+      expect(
+        fromBytes.pullSynthetic(_block),
+        orderedEquals(fromPath.pullSynthetic(_block)),
+      );
+    });
+
+    test('seeks and swaps like the path session', () async {
+      const before = WaveformDocument([
+        WaveformRegion(sourceStart: 0, sourceEnd: _frames),
+      ]);
+      const after = WaveformDocument([
+        WaveformRegion(sourceStart: 0, sourceEnd: _frames, gain: 0.25),
+      ]);
+
+      final session = await FfiPlaybackSession.openBytes(
+        bytes: File(sourcePath).readAsBytesSync(),
+        document: before,
+      );
+      addTearDown(session.dispose);
+
+      await session.seek(const Duration(seconds: 1));
+      expect(session.position, const Duration(seconds: 1));
+
+      await session.setDocument(after);
+      expect(session.document, same(after));
+      expect(session.position, const Duration(seconds: 1));
+      expect(session.underruns, 0);
+    });
+
+    test('reports bytes it cannot decode', () async {
+      await expectLater(
+        FfiPlaybackSession.openBytes(
+          bytes: Uint8List.fromList(List.filled(64, 0)),
+          document: _document,
+        ),
+        throwsA(isA<PlaybackUnavailable>()),
+      );
+    });
+
+    test('the platform fake records a byte playback', () async {
+      final fake = FakeMonowavePlatform()..install();
+      addTearDown(FakeMonowavePlatform.uninstall);
+
+      final session = await MonowavePlatform.instance.openPlaybackBytes(
+        bytes: Uint8List(128),
+        document: _document,
+      );
+
+      expect(fake.bytePlaybacks.single.$1, 128);
+      expect(fake.playbacks.single, same(session));
+    });
+  });
+
   group('the fake', () {
     // The third exit criterion. A host that builds a scrubber against the fake
     // must not discover a different contract against a real device.

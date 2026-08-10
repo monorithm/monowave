@@ -171,8 +171,41 @@ is a WebAudio graph to play them, which needs no C.
 
 This is M10. See [ROADMAP.md](ROADMAP.md).
 
+### Added: playback on web
+
+`MonowavePlatform.openPlaybackBytes` returns a `PlaybackSession` on all six
+targets. Web has no filesystem, so bytes are the way in there; on native it is
+the same engine as `openPlayback`, reading from a copy rather than streaming a
+file.
+
+What plays is byte-identical to what `exportWav` would write, on every target,
+because every target renders through the same C loop. What differs is only the
+device underneath - miniaudio natively, a WebAudio graph on web.
+
+The web graph is deliberately plain: the whole render goes into an `AudioBuffer`
+up front and an `AudioBufferSourceNode` plays it. No ring and no feeder, because
+the browser owns the audio thread and there is nothing to race. Right for a
+preview of an edit, wrong for an audiobook - a long document costs its whole
+length in memory. `underruns` is always zero there, and that is a fact rather
+than a stub: with the render resident, a feeder cannot lose a race it is not in.
+
+The playhead is still the audio clock. `AudioContext.currentTime` advances with
+the hardware, the same rule the native session follows by counting frames the
+device consumed.
+
+**Browsers refuse to start an `AudioContext` without a user gesture**, and
+report it as a context stuck in `suspended` rather than as an error. `play()`
+detects that and throws `PlaybackUnavailable` saying to call it from a tap.
+
+- `wf_playback_create_memory` is the native half, so a host holding audio in
+  memory does not have to write a temporary file to play it.
+- `openPlayback` with a path still throws on web.
+- The M7 to M9 transport does not port, by design. A browser has its own
+  scheduler; what crosses is the samples.
+
 ### Changed
 
+- **ABI 13 → 14.** Additive: `wf_playback_create_memory`.
 - **ABI 12 → 13.** Additive: `wf_render_open_memory` and `wf_region_stride`.
 - **ABI 11 → 12.** Additive: `wf_render_set_regions` and
   `wf_playback_set_regions`.
