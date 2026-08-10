@@ -13,14 +13,17 @@ import '../model/waveform_peaks.dart';
 import '../native/monowave_bindings.dart' as bindings;
 import 'monowave_platform.dart';
 
-/// The default [MonowavePlatform] on the five native targets.
+/// This function returns the default [MonowavePlatform] on the five native
+/// targets.
 MonowavePlatform defaultPlatform() => const FfiMonowavePlatform();
 
-/// Keeps a native pyramid alive, and frees it when nothing references it.
+/// This class keeps a native pyramid alive. When nothing references the
+/// pyramid any more, this class frees it.
 ///
-/// [WaveformPeaks] hands out views straight into this allocation, so it must
-/// outlive them. The peaks object captures this holder in its dispose closure,
-/// which is what keeps it reachable - drop the peaks and the finalizer runs.
+/// [WaveformPeaks] gives views directly into this allocation, so the
+/// allocation must outlive the views. The peaks object captures this holder in
+/// its dispose closure, and that reference is what keeps the holder reachable.
+/// When nothing references the peaks any more, the finalizer runs.
 final class _PeaksHandle implements Finalizable {
   _PeaksHandle(this.pointer) {
     _finalizer.attach(this, pointer.cast(), detach: this);
@@ -39,16 +42,16 @@ final class _PeaksHandle implements Finalizable {
   }
 }
 
-/// Calls the C core directly over `dart:ffi`.
+/// This class calls the C core directly over `dart:ffi`.
 ///
-/// The code asset is built by `hook/build.dart`, so there is no plugin
-/// registration, no method channel, and no per-platform scaffolding here.
+/// `hook/build.dart` builds the code asset. Therefore this file has no plugin
+/// registration, no method channel, and no per-platform scaffolding.
 class FfiMonowavePlatform implements MonowavePlatform {
   const FfiMonowavePlatform();
 
-  /// A no-op. The code asset is resolved by the VM at startup; there is nothing
-  /// to load. Present only so hosts can write one initialization path that
-  /// works on all six targets.
+  /// This method does nothing. The VM resolves the code asset at startup, so
+  /// there is nothing to load. This method exists only so that hosts can write
+  /// one initialization path that works on all six targets.
   @override
   Future<void> ensureInitialized() async {}
 
@@ -211,7 +214,8 @@ class FfiMonowavePlatform implements MonowavePlatform {
     CaptureConfig config = const CaptureConfig(),
   ]) => FfiCaptureSession.open(config);
 
-  /// Builds the Dart-side pyramid as views over the native allocation.
+  /// This method builds the Dart-side pyramid as views over the native
+  /// allocation.
   static WaveformPeaks _wrap(int address, int baseSamplesPerPixel) {
     final pointer = Pointer<bindings.WfPeaks>.fromAddress(address);
     final handle = _PeaksHandle(pointer);
@@ -247,7 +251,8 @@ class FfiMonowavePlatform implements MonowavePlatform {
   }
 }
 
-/// Runs in a helper isolate. Returns the pyramid's address, or throws.
+/// This function runs in a helper isolate. It returns the address of the
+/// pyramid, or it throws.
 int _decodeFileToAddress(String path, int baseSamplesPerPixel) {
   final nativePath = path.toNativeUtf8();
   final error = calloc<Int32>();
@@ -288,7 +293,7 @@ int _decodeBytesToAddress(Uint8List bytes, int baseSamplesPerPixel) {
   }
 }
 
-/// Runs in a helper isolate. Returns the C status code.
+/// This function runs in a helper isolate. It returns the C status code.
 int _exportToPath(
   String sourcePath,
   String outputPath,
@@ -322,12 +327,14 @@ int _exportToPath(
   }
 }
 
-/// Runs in a helper isolate. Returns interleaved 16-bit PCM, or throws.
+/// This function runs in a helper isolate. It returns interleaved 16-bit PCM,
+/// or it throws.
 ///
-/// The block size is deliberately not the exporter's 4096. The two have to
-/// agree sample for sample, and they only can because the envelope depends on
-/// the position inside a region rather than on where a block happens to fall -
-/// so rendering at a different size is the cheapest way to keep proving it.
+/// The block size is deliberately not 4096, the block size of the exporter.
+/// The two paths must agree sample for sample. They can agree only because the
+/// envelope depends on the position inside a region, and not on the point
+/// where a block starts. A render at a different block size is therefore the
+/// cheapest way to prove that agreement again and again.
 Int16List _renderToPcm(
   String sourcePath,
   List<(int, int, double, int, int)> regions,
@@ -388,7 +395,8 @@ Int16List _renderToPcm(
   }
 }
 
-/// Runs in a helper isolate. The memory twin of [_renderToPcm].
+/// This function runs in a helper isolate. It is the memory twin of
+/// [_renderToPcm].
 Int16List _renderBytesToPcm(
   Uint8List bytes,
   List<(int, int, double, int, int)> regions,
@@ -456,7 +464,7 @@ Int16List _renderBytesToPcm(
   }
 }
 
-/// Maps the C error codes in `monowave.h` onto [DecodeFailure].
+/// This function maps the C error codes in `monowave.h` onto [DecodeFailure].
 MonowaveDecodeException _failure(int code, String source) {
   final failure = switch (code) {
     1 => DecodeFailure.unreadable,

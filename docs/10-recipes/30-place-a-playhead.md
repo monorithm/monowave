@@ -1,7 +1,9 @@
 # Place a playhead and seek
 
-`WaveformTimeline` is the whole of monowave's relationship with playback.
-It takes a sample rate and a length, not a player, so `just_audio`, `media_kit` or your own engine are each a few lines of adapter in your code and none of them are a dependency here.
+`WaveformTimeline` is the whole relationship between monowave and playback.
+The class takes a sample rate and a length, and it does not take a player.
+Thus `just_audio`, `media_kit`, or your own engine each need a few lines of adapter code.
+None of them is a dependency here.
 
 ```dart
 final timeline = WaveformTimeline.of(peaks);
@@ -18,8 +20,9 @@ final t = timeline.timeAtProgress(0.35);
 
 ## Split the playhead out of the body
 
-This one will bite otherwise.
-Put the waveform and the playhead in separate painters behind a `RepaintBoundary`, and let the body's `shouldRepaint` ignore progress entirely:
+Put the waveform and the playhead in separate painters behind a `RepaintBoundary`.
+Then make the `shouldRepaint` function of the body ignore progress.
+Without these two steps, the scrub stalls.
 
 ```dart
 Stack(
@@ -32,13 +35,18 @@ Stack(
 )
 ```
 
-Scrubbing then repaints a clipped overlay rather than every bar in the file.
-At sixty frames a second over a three-hour recording, that is the difference between a smooth scrub and a stalled one.
+A scrub then repaints a clipped overlay, and not every bar in the file.
+At 60 frames each second over a three-hour recording, this split decides between a smooth scrub and a stalled scrub.
 
 ## For a live meter, key on `revision`
 
-A meter driven by [capture](./40-record-audio.md) is the other repaint trap, and it fails in the opposite direction -- silently, by never repainting at all.
-`CaptureScope` is a ring that mutates in place, so once it is full its length never changes again and a `shouldRepaint` keyed on `length` stops firing:
+A meter that [capture](./40-record-audio.md) drives is the other repaint trap.
+This trap fails in the opposite direction.
+The meter never repaints, and it gives no error.
+
+`CaptureScope` is a ring that changes in place.
+After the ring is full, the length of the ring never changes again.
+Thus a `shouldRepaint` that keys on `length` no longer triggers a repaint:
 
 ```dart
 @override

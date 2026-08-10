@@ -1,12 +1,13 @@
 /// Headless audio capture, waveform peaks, and non-destructive editing.
 ///
-/// Monowave exports no widget, and nothing under `lib/` imports
-/// `package:flutter/widgets.dart`, `material.dart` or `cupertino.dart` - CI
-/// enforces that with a grep. Peaks come back as a zero-copy view plus the
-/// viewport math to place them; the host writes the painter.
+/// monowave exports no widget. Nothing under `lib/` imports
+/// `package:flutter/widgets.dart`, `material.dart` or `cupertino.dart`, and a
+/// grep in CI asserts that this rule stays true. monowave returns
+/// peaks as a zero-copy view, with the viewport math to put them in position.
+/// The host writes the painter.
 ///
-/// Test doubles live in `package:monowave/testing.dart`, deliberately not
-/// exported from here.
+/// Test doubles are in `package:monowave/testing.dart`. This library does not
+/// export them, and that is deliberate.
 library;
 
 export 'src/capture/capture_scope.dart' show CaptureFrame, CaptureScope;

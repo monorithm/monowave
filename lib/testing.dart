@@ -1,8 +1,8 @@
 /// Test doubles for hosts that build on monowave.
 ///
-/// A host's tests should not need a microphone, an audio file, or a native
-/// core, so every seam monowave exposes has a fake here. Import this from
-/// `test/` only - it is deliberately not part of
+/// The tests of a host must not need a microphone, an audio file, or the C
+/// core. For this reason, every seam that monowave exposes has a fake here.
+/// Import this library from `test/` only. It is deliberately not part of
 /// `package:monowave/monowave.dart`.
 library;
 
@@ -14,8 +14,8 @@ import 'monowave.dart';
 
 /// An in-memory [MonowavePlatform].
 ///
-/// Records what it was asked to do and answers from canned values, so a test
-/// asserts on the *request* rather than on bytes it would have to decode.
+/// This fake records each request and answers with canned values. As a result,
+/// a test asserts on the *request* and not on bytes that the test must decode.
 class FakeMonowavePlatform implements MonowavePlatform {
   FakeMonowavePlatform({this.abi = 1});
 
@@ -25,11 +25,12 @@ class FakeMonowavePlatform implements MonowavePlatform {
   /// Every window passed to [reduceMinMax], in order.
   final List<Int16List> reductions = [];
 
-  /// When set, [reduceMinMax] returns this instead of reducing.
+  /// If a test sets this field, [reduceMinMax] returns it and does not reduce
+  /// the samples.
   MinMax? nextResult;
 
-  /// How many times [ensureInitialized] was awaited. A host that loads on every
-  /// build rather than once will show up here.
+  /// How many times a caller awaited [ensureInitialized]. This count shows a
+  /// host that loads the C core on every build instead of one time only.
   int initializeCount = 0;
 
   @override
@@ -60,11 +61,12 @@ class FakeMonowavePlatform implements MonowavePlatform {
     return (min: lo, max: hi);
   }
 
-  /// Peaks handed back by the decode methods, keyed by path or by byte length.
-  /// Unregistered inputs get [defaultPeaks].
+  /// The peaks that the decode methods return, keyed by path or by byte length.
+  /// An input that is not in this map gets [defaultPeaks].
   final Map<Object, WaveformPeaks> decoded = {};
 
-  /// What an unregistered decode returns: two seconds of silence at 44.1 kHz.
+  /// If the input is not in [decoded], the decode returns this value. The
+  /// default is two seconds of silence at 44.1 kHz.
   WaveformPeaks Function() defaultPeaks = () =>
       WaveformPeaks.fromSamples(Int16List(88200), sampleRate: 44100);
 
@@ -72,7 +74,7 @@ class FakeMonowavePlatform implements MonowavePlatform {
   /// [decodeBytes], in order.
   final List<Object> decodeRequests = [];
 
-  /// When set, the next decode of either kind throws this instead.
+  /// If a test sets this field, the next decode of either kind throws it.
   Object? nextDecodeError;
 
   @override
@@ -102,7 +104,7 @@ class FakeMonowavePlatform implements MonowavePlatform {
   /// Every export requested, as (sourcePath, outputPath, document).
   final List<(String, String, WaveformDocument)> exports = [];
 
-  /// When set, the next export throws this instead.
+  /// If a test sets this field, the next export throws it.
   Object? nextExportError;
 
   @override
@@ -123,12 +125,12 @@ class FakeMonowavePlatform implements MonowavePlatform {
   /// Every render requested, as (sourcePath, document).
   final List<(String, WaveformDocument)> renders = [];
 
-  /// What [renderPcm] returns. Defaults to silence one frame per source frame
-  /// the document describes, so a host can assert on the *length* without
-  /// having to synthesize audio.
+  /// What [renderPcm] returns. The default is silence with one frame for each
+  /// source frame that the document describes. As a result, a host can assert
+  /// on the *length* with no need to synthesize audio.
   Int16List? nextRender;
 
-  /// When set, the next render throws this instead.
+  /// If a test sets this field, the next render throws it.
   Object? nextRenderError;
 
   @override
@@ -170,10 +172,10 @@ class FakeMonowavePlatform implements MonowavePlatform {
     return renderPcm(sourcePath: '${bytes.length} bytes', document: document);
   }
 
-  /// Sessions handed back by [openCapture], newest last.
+  /// The sessions that [openCapture] returns, newest last.
   final List<FakeCaptureSession> sessions = [];
 
-  /// When set, [openCapture] throws this instead of opening.
+  /// If a test sets this field, [openCapture] throws it and opens no session.
   Object? nextCaptureError;
 
   @override
@@ -191,10 +193,10 @@ class FakeMonowavePlatform implements MonowavePlatform {
     return session;
   }
 
-  /// Sessions handed back by [openPlayback], newest last.
+  /// The sessions that [openPlayback] returns, newest last.
   final List<FakePlaybackSession> playbacks = [];
 
-  /// When set, [openPlayback] throws this instead of opening.
+  /// If a test sets this field, [openPlayback] throws it and opens no session.
   Object? nextPlaybackError;
 
   @override
@@ -228,7 +230,7 @@ class FakeMonowavePlatform implements MonowavePlatform {
     );
   }
 
-  /// Installs this as the platform. Call [uninstall] in `tearDown`.
+  /// Installs this fake as the platform. Call [uninstall] in `tearDown`.
   void install() => MonowavePlatform.instance = this;
 
   static void uninstall() => MonowavePlatform.instance = null;
@@ -236,18 +238,18 @@ class FakeMonowavePlatform implements MonowavePlatform {
 
 /// A [CaptureSession] that never touches a microphone.
 ///
-/// Drives the same state a real session does - recording flag, frame stream,
-/// rolling scope, drop counters - so a host's visualizer can be exercised in a
-/// widget test. Frames arrive when a test calls [emit] or [emitTone] rather
-/// than when an audio thread produces them, which makes the timing exact
-/// instead of merely likely.
+/// This fake drives the same state as a real session: the recording flag, the
+/// frame stream, the rolling scope and the drop counters. As a result, a widget
+/// test can exercise the visualizer of a host. Frames arrive when a test calls
+/// [emit] or [emitTone], and not when an audio thread produces them. This makes
+/// the timing exact instead of merely likely.
 ///
-/// [dispose] follows the real session in what it leaves readable: [produced],
-/// [dropped], [pcmDropped] and [truncated] keep answering afterwards rather
-/// than throwing, so a UI that reads a counter while tearing down behaves the
+/// [dispose] leaves the same values readable as the real session. [produced],
+/// [dropped], [pcmDropped] and [truncated] answer after [dispose] and do not
+/// throw. As a result, a UI that reads a counter during teardown behaves the
 /// same here as it does against a microphone. The real session freezes its
-/// counters at dispose to manage it, because the C struct they came from is
-/// gone by then.
+/// counters at [dispose] to manage this, because the C struct that supplied
+/// them is gone by then.
 class FakeCaptureSession implements CaptureSession {
   FakeCaptureSession({this.config = const CaptureConfig()})
     : scope = CaptureScope(capacity: config.scopeCapacity);
@@ -264,10 +266,11 @@ class FakeCaptureSession implements CaptureSession {
   /// Every frame emitted since construction.
   final List<CaptureFrame> emitted = [];
 
-  /// What [stop] returns. Defaults to peaks built from whatever was emitted.
+  /// What [stop] returns. The default is peaks from the frames that this fake
+  /// emitted.
   WaveformPeaks? stopResult;
 
-  /// When set, [start] throws this.
+  /// If a test sets this field, [start] throws it.
   Object? nextStartError;
 
   int _dropped = 0;
@@ -320,7 +323,7 @@ class FakeCaptureSession implements CaptureSession {
     _recording = true;
   }
 
-  /// Publishes one frame, exactly as a drain would.
+  /// Publishes one frame, exactly as a drain does.
   void emit(CaptureFrame frame) {
     emitted.add(frame);
     scope.add(frame);
@@ -337,7 +340,7 @@ class FakeCaptureSession implements CaptureSession {
     }
   }
 
-  /// Simulates the consumer falling behind.
+  /// Simulates a consumer that falls behind.
   void dropFrames(int count) => _dropped += count;
 
   @override
@@ -378,35 +381,35 @@ class FakeCaptureSession implements CaptureSession {
 
 /// A [PlaybackSession] that never opens an audio device.
 ///
-/// The playhead moves when a test calls [advance] rather than when a device
-/// consumes frames, which makes the timing exact instead of merely likely - the
-/// same bargain [FakeCaptureSession] makes for the frame stream.
+/// The playhead moves when a test calls [advance], and not when a device
+/// consumes frames. This makes the timing exact instead of merely likely.
+/// [FakeCaptureSession] makes the same bargain for the frame stream.
 ///
-/// It answers the same way the real session does where a host can tell the
-/// difference. [position] never runs past [duration], never moves backwards
-/// except on a [seek], and keeps answering after [dispose] rather than
-/// throwing.
+/// This fake answers the same way as the real session at each point where a
+/// host can see the difference. [position] never goes past [duration]. It never
+/// moves backward, except on a [seek]. It answers after [dispose] and does not
+/// throw.
 class FakePlaybackSession implements PlaybackSession {
   FakePlaybackSession({required this.document, this.sampleRate = 44100});
 
-  /// The rate [duration] and [position] are expressed against.
+  /// The rate that [duration] and [position] use.
   final int sampleRate;
 
-  /// Mutable, like the rest of this fake. [setDocument] assigns it, and a test
-  /// may set it directly to stage a starting state.
+  /// This field is mutable, like the rest of this fake. [setDocument] assigns
+  /// it, and a test can also set it directly to stage an initial state.
   @override
   WaveformDocument document;
 
   /// Every seek requested, in order.
   final List<Duration> seeks = [];
 
-  /// Every document swapped in, in order.
+  /// Every document that [setDocument] received, in order.
   final List<WaveformDocument> documents = [];
 
   int playCount = 0;
   int pauseCount = 0;
 
-  /// When set, [play] throws this.
+  /// If a test sets this field, [play] throws it.
   Object? nextPlayError;
 
   /// What [underruns] reports.
@@ -478,7 +481,8 @@ class FakePlaybackSession implements PlaybackSession {
     if (_position > duration) _position = duration;
   }
 
-  /// Moves the playhead, as a device consuming frames would. Stops at the end.
+  /// Moves the playhead, as a device that consumes frames does. The playhead
+  /// stops at the end.
   void advance(Duration by) {
     final next = _position + by;
     _position = next > duration ? duration : next;

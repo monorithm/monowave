@@ -1,10 +1,12 @@
 # Your first waveform
 
-Monowave is headless: it decodes, reduces, records and edits, and it ships no widgets.
+monowave is headless. It decodes, reduces, records and edits. It contains no widgets.
 
-Follow this once, in order, and you will have an app that draws a real waveform from a real file and records a new one to disk.
-It stays on the shortest path on purpose -- no alternatives, no configuration you do not need yet.
-When you want to do something specific afterwards, the [recipes](../10-recipes/00-decode-a-file.md) are task by task, and [concepts](../20-concepts/00-what-is-monowave.md) is where the reasoning lives.
+Do these steps in order. Then you have an application that draws a real waveform from a real file. The application also records a new waveform to disk.
+
+This tutorial deliberately keeps to the shortest path. It gives no alternatives and no configuration that you do not need yet.
+
+After this tutorial, read the [recipes](../10-recipes/00-decode-a-file.md) for one specific job. Each recipe is one task. The [concepts](../20-concepts/00-what-is-monowave.md) pages hold the reasoning.
 
 ## Install
 
@@ -12,31 +14,31 @@ When you want to do something specific afterwards, the [recipes](../10-recipes/0
 flutter pub add monowave
 ```
 
-Monowave compiles its native code with a Dart build hook, so native assets have to be enabled once, per machine:
+monowave compiles its native code with a Dart build hook. As a result, enable native assets one time on each machine:
 
 ```bash
 flutter config --enable-native-assets
 ```
 
 There is no CocoaPods pod, no Gradle plugin and no per-ABI binary in the package.
-The C in `src/` is built from source as part of your build, for whatever you are targeting.
-See [platform notes](../30-reference/10-platforms.md) for what each target needs.
+Your build compiles the C code in `src/` from source, for each target that you select.
+Read [platform notes](../30-reference/10-platforms.md) for the requirements of each target.
 
 ## Initialize the core
 
-Every call into the C core crosses `MonowavePlatform`.
-Initialize it once, before anything else:
+Every call into the C core passes through `MonowavePlatform`.
+Initialize this platform one time, before all other calls:
 
 ```dart
 final monowave = MonowavePlatform.instance;
 await monowave.ensureInitialized();
 ```
 
-This is asynchronous entirely because of web: native targets resolve their code asset at startup and have nothing to wait for, but instantiating a WASM module is inherently async.
-One await up front is cheaper than putting a `Future` in front of `reduceMinMax`, which runs once per frame while scrubbing.
-On the five native targets it is a no-op.
+This method is asynchronous only because of web. Native targets resolve their code asset at startup, and they wait for nothing. Web must instantiate a WASM module, and that operation is asynchronous by nature.
 
-Every other method throws `MonowaveUnavailable` until it completes.
+One await at the start is cheaper than a `Future` in front of `reduceMinMax`. During a scrub, `reduceMinMax` runs one time for each frame. On the five native targets, `ensureInitialized` is a no-op.
+
+Until `ensureInitialized` completes, every other method throws `MonowaveUnavailable`.
 
 ## Decode a file
 
@@ -45,18 +47,18 @@ final peaks = await monowave.decodeFile(path);   // WAV, MP3 or FLAC
 ```
 
 `WaveformPeaks` is a mipmap pyramid, not a flat array.
-The decoder streams the file a bucket at a time, so an audiobook is never resident in memory, and the peaks themselves are a view over memory the C core owns -- a three-hour file never reaches the Dart heap.
+The decoder streams the file one bucket at a time. As a result, an audiobook is never resident in memory. The peaks are a view over memory that the C core owns. Because of this, a three-hour file never reaches the Dart heap.
 
-On web there is no filesystem; use `decodeBytes` there.
-More in [decode a file](../10-recipes/00-decode-a-file.md).
+Web has no filesystem. On web, use `decodeBytes`.
+For more information, read [decode a file](../10-recipes/00-decode-a-file.md).
 
-Call `dispose()` when the waveform leaves the screen.
-Any view handed out beforehand dangles afterwards, so drop those first.
+When the waveform leaves the screen, call `dispose()`.
+Each view that you got before `dispose()` dangles after that call. Remove those views before you call `dispose()`.
 
-## Draw it
+## Draw the waveform
 
-`WaveformViewport` is pure maths: which part of the audio is on screen, and at what zoom.
-`resolve` picks the mipmap level for you and returns the slice to draw, already in painter coordinates.
+`WaveformViewport` is pure math. It gives the part of the audio that is on screen, and the zoom level.
+`resolve` selects the mipmap level for you. It returns the slice to draw, already in painter coordinates.
 
 ```dart
 class WavePainter extends CustomPainter {
@@ -96,7 +98,7 @@ class WavePainter extends CustomPainter {
 }
 ```
 
-Then hand it a viewport that fits the whole file:
+Then give the painter a viewport that fits the whole file:
 
 ```dart
 CustomPaint(
@@ -106,12 +108,13 @@ CustomPaint(
 ```
 
 That is a complete waveform.
-[Pan and zoom](../10-recipes/20-pan-and-zoom.md) and [place a playhead](../10-recipes/30-place-a-playhead.md) take it from here.
+[Pan and zoom](../10-recipes/20-pan-and-zoom.md) and [place a playhead](../10-recipes/30-place-a-playhead.md) continue from this point.
 
 ## Record
 
-Capture needs a microphone permission, which monowave deliberately does **not** request -- a headless package has no UI to explain why it is asking, and you do.
-Declare the usage strings and ask with whatever permission plugin you already have.
+Capture needs a microphone permission. monowave deliberately does **not** request this permission. A headless package has no UI that explains the reason for the request. Your application has this UI.
+
+Declare the usage strings. Then request the permission with the permission plugin that you already use.
 
 iOS `Info.plist`:
 
@@ -141,16 +144,16 @@ session.frames.listen((frame) => setState(() {}));   // about 86/sec
 final peaks = await session.stop();   // caller owns these -- dispose them
 ```
 
-`openCapture` throws `CaptureUnavailable` if the permission has not already been granted.
-The peaks from `stop()` come from the audio thread's own history rather than from whatever the visualizer collected, so they are complete even if the app was backgrounded.
-[Record audio](../10-recipes/40-record-audio.md) covers pause and resume, dropped frames, and keeping the take.
+If the permission is not already granted, `openCapture` throws `CaptureUnavailable`.
+The peaks from `stop()` come from the history that the audio thread keeps. They do not come from the data that the visualizer collected. Even if the application was in the background, the peaks are complete.
+[Record audio](../10-recipes/40-record-audio.md) covers pause and resume, dropped frames, and how to keep the take.
 
-## Where to go next
+## What to read next
 
-You now have the whole shape of the package in one file. Pick by what you need:
+This one page gave you the whole shape of the package. Select by what you need:
 
-**To do a specific job**, the [recipes](../10-recipes/00-decode-a-file.md) are one task each -- [pan and zoom](../10-recipes/20-pan-and-zoom.md), [draw a live meter](../10-recipes/50-draw-a-live-meter.md), [edit without touching the audio](../10-recipes/60-edit-non-destructively.md), [send a voice note](../10-recipes/80-send-a-voice-note.md), [test with no hardware](../10-recipes/90-test-without-hardware.md).
+**To do a specific job**, read the [recipes](../10-recipes/00-decode-a-file.md). Each recipe is one task: [pan and zoom](../10-recipes/20-pan-and-zoom.md), [draw a live meter](../10-recipes/50-draw-a-live-meter.md), [edit without touching the audio](../10-recipes/60-edit-non-destructively.md), [send a voice note](../10-recipes/80-send-a-voice-note.md), [test with no hardware](../10-recipes/90-test-without-hardware.md).
 
-**To understand why it is shaped this way**, [what is monowave](../20-concepts/00-what-is-monowave.md) and [architecture](../20-concepts/90-architecture.md).
+**To understand why the package has this shape**, read [what is monowave](../20-concepts/00-what-is-monowave.md) and [architecture](../20-concepts/90-architecture.md).
 
-**To look something up**, the [API map](../30-reference/00-api-map.md) and [platform notes](../30-reference/10-platforms.md).
+**To find a specific detail**, read the [API map](../30-reference/00-api-map.md) and the [platform notes](../30-reference/10-platforms.md).

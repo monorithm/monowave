@@ -1,12 +1,14 @@
 # Draw a waveform
 
-Monowave ships no widget, so you write the painter.
-This is the whole of it: resolve a window, loop over its pairs, place a rectangle.
+monowave ships no widget, so you write the painter.
+The painter does three things: it resolves a window, it loops over the pairs, and it places a rectangle.
 
 ## Point a viewport at the audio
 
-`WaveformViewport` is which part of the audio is on screen and at what zoom.
-It is pure maths and immutable -- every gesture produces a new one rather than mutating one, so it binds to any state management.
+`WaveformViewport` defines which part of the audio is on screen, and the zoom level.
+`WaveformViewport` is pure math, and it is immutable.
+Every gesture produces a new viewport and does not change the old one.
+Thus the class binds to any state management.
 
 ```dart
 final viewport = WaveformViewport(
@@ -19,29 +21,34 @@ final viewport = WaveformViewport(
 final viewport = WaveformViewport.fitted(peaks, width);
 ```
 
-`startSample` is a `double` on purpose.
-An integer would make panning step a sample at a time, which is visible at high zoom.
+`startSample` is deliberately a `double`.
+With an integer, a pan steps one sample at a time.
+This step is visible at high zoom.
 
 ## Resolve a window
 
-`resolve` picks the mipmap level for the current zoom and returns the slice to draw, already converted to painter coordinates:
+`resolve` picks the mipmap level for the current zoom.
+`resolve` returns the slice to draw, already in painter coordinates:
 
 ```dart
 final window = viewport.resolve(peaks);
 ```
 
-`PeakWindow` carries everything the loop needs:
+`PeakWindow` carries everything that the loop needs:
 
 | Field | What it is |
 |---|---|
-| `pairCount` | How many pairs to draw. |
-| `xOfFirstPair` | Where the first pair starts, in viewport pixels. |
-| `pixelsPerPair` | Width of one pair on screen. |
-| `minAt(i)` / `maxAt(i)` | The extremes of pair `i`, 0-based within the window. |
-| `rmsAt(i)` | The RMS of pair `i`, or null if the pyramid carries none. |
-| `level` | Which mipmap level this came from. Useful for a debug overlay. |
+| `pairCount` | The number of pairs to draw. |
+| `xOfFirstPair` | The start of the first pair, in viewport pixels. |
+| `pixelsPerPair` | The width of one pair on screen. |
+| `minAt(i)` / `maxAt(i)` | The extremes of pair `i`, 0-based in the window. |
+| `rmsAt(i)` | The RMS of pair `i`. If the pyramid carries no RMS, this value is null. |
+| `level` | The mipmap level of this window. This field is useful for a debug overlay. |
 
-`xOfFirstPair` is usually slightly negative, which is not a bug: the window snaps outward to whole pairs so panning stays smooth instead of stepping a bar at a time.
+`xOfFirstPair` is usually a small negative number.
+This value is not an error.
+The window snaps outward to whole pairs.
+As a result, a pan stays smooth and does not step one bar at a time.
 
 ## Write the painter
 
@@ -93,21 +100,28 @@ class WavePainter extends CustomPainter {
 }
 ```
 
-There is no arithmetic in that loop beyond placing a rectangle.
-`resolve` did the level selection, the clamping and the coordinate conversion.
+The loop does no arithmetic, except the arithmetic that places a rectangle.
+`resolve` already selected the level, clamped the window, and converted the coordinates.
 
 ## What that gets you
 
-The specimen below is the same shape in JavaScript -- a real pyramid, a viewport
-that resolves a level, and a loop over pairs. Drag to pan, scroll to zoom, and
-watch the level change while the number of pairs drawn stays bounded by the
-width of the canvas rather than by the length of the audio.
+The specimen below is the same shape in JavaScript.
+The specimen has a real pyramid, a viewport that resolves a level, and a loop over pairs.
+
+- Drag to pan.
+- Scroll to zoom.
+- Watch the level change.
+
+The width of the canvas bounds the number of pairs on screen.
+The length of the audio does not bound that number.
 
 <!-- monokit-demo: waveform-zoom -->
 
-That bound is the entire reason the pyramid exists. Note also that the hull is
-asymmetric -- the min and the max are different distances from the centre -- which
-is what an average would erase.
+That bound is the whole reason that the pyramid exists.
+The hull is also asymmetric, because the min and the max are different distances from the center.
+An average erases this difference.
 
-Next: [pan and zoom it](./20-pan-and-zoom.md), then [place a playhead](./30-place-a-playhead.md).
-If a fixed-bar summary is all you need, you do not need a painter at all -- see [voice notes](./80-send-a-voice-note.md).
+Next, read [pan and zoom it](./20-pan-and-zoom.md).
+Then read [place a playhead](./30-place-a-playhead.md).
+If you need only a fixed-bar summary, you do not need a painter.
+The [voice notes](./80-send-a-voice-note.md) recipe shows that path.

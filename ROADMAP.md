@@ -6,33 +6,33 @@ comes next.
 
 Every milestone has an **exit criterion written as a test**. That is the only
 form of "done" that stays true afterwards. `test/probe_test.dart` still opens
-with the words "M0 exit criteria, as a test", and the reason to keep the shape
-is simple. A milestone that resists a plain assertion is usually a milestone
-that nobody thought through.
+with the words "M0 exit criteria, as a test". The reason to keep this shape is
+simple. Usually, a milestone that resists a plain assertion is a milestone that
+no one examined with care.
 
 ## M6 to M10: playing an edit
 
-Monowave can capture, draw, edit and export a document. It cannot play one.
+monowave can capture, draw, edit and export a document. It cannot play one.
 
-The only way to hear an edit today is `exportWav`, which decodes the whole
+Today the only way to hear an edit is `exportWav`, which decodes the whole
 source and writes a file. A user hears a trim after the commitment, never during
-the drag of a handle. The example ships a `DemoPlayer` that advances a
-`Duration` on a timer, and a comment in that file admits there is no decoder and
-no audio output behind it.
+the drag of a handle. The example includes a `DemoPlayer` that advances a
+`Duration` on a timer. A comment in that file admits that there is no decoder
+and no audio output behind it.
 
 [Architecture](docs/20-concepts/90-architecture.md) records why this work lives
-here rather than in a sibling package. This page is the order and the design.
+here rather than in a sibling package. This page gives the order and the design.
 
 ### The sequencing decision
 
 The riskiest part is not the audio device. It is the claim that a preview sounds
-exactly like the export. So **M6 renders with no device at all**. It is a pure
-function from a document to a buffer, it needs no speaker, and CI can assert it
-on three operating systems.
+exactly like the export. Therefore **M6 renders with no device at all**. M6 is a
+pure function from a document to a buffer. It needs no speaker, and CI can
+assert it on three operating systems.
 
-That is the opposite of the tempting order, which is to get sound out of a
-speaker first and worry about exactness later. Sound out of a speaker is a demo.
-The exactness is the product.
+That order is the opposite of the tempting one. The tempting order is to get
+sound from a speaker first and to leave exactness for later. Sound from a
+speaker is a demo. The exactness is the product.
 
 ---
 
@@ -40,28 +40,29 @@ The exactness is the product.
 
 `wf_export_wav` already contained the render loop. It opened a source, walked
 the regions, applied gain and the fade envelope per sample, and wrote the
-result. M6 extracted that loop so the exporter and a future player call the same
-code.
+result. M6 extracted that loop, so the exporter and a future player call the
+same code.
 
-- Extracted the per-region loop into `wf_render_*`. `wf_export_wav` is a file
+- M6 extracted the per-region loop into `wf_render_*`. `wf_export_wav` is a file
   sink over it.
 - `MonowavePlatform.renderPcm` returns a document as PCM, with no file.
-- `wf_envelope` is exported rather than `static`, and tested.
+- `wf_envelope` is an exported function rather than a `static` one, and it has
+  tests.
 - `wf_render_length_frames()` reports the output length.
 
-Status: 22 tests in `test/render_test.dart`, and the full suite is at 170. The
+Status: 22 tests in `test/render_test.dart`. The full suite is at 170 tests. The
 determinism digests did not move on either binding, which was the other half of
 the criterion.
 
-**Exit criteria**, two of them:
+There are two **exit criteria**:
 
 - **The refactor changes nothing.** The existing export tests pass, and the
   determinism digests in `test/decode_test.dart` and `tool/verify_wasm.mjs` do
   not move. A shared loop that alters one byte of an export is a regression, not
   a refactor.
 - **A render matches an export.** For a corpus of documents over WAV, MP3 and
-  FLAC fixtures, render into a buffer and export the same document to a file.
-  Assert the PCM is identical. Byte for byte.
+  FLAC fixtures, render each document into a buffer. Then export the same
+  document to a file. Assert that the PCM is identical, byte for byte.
 
 The two paths differ in block size, so this stays a real test rather than a
 tautology. The corpus must include the shapes that break a naive extraction:
@@ -72,135 +73,145 @@ tautology. The corpus must include the shapes that break a naive extraction:
 - a region that runs past the end of the source
 - a block size that does not divide the region length
 
-The envelope also gets the property tests it never had: exactly 0 and exactly 1
-at the endpoints, linear in between, overlapping fades that multiply, and never
-a negative multiplier.
+The envelope also gets the property tests that it never had:
+
+- exactly 0 and exactly 1 at the endpoints
+- linear values between the endpoints
+- fades that overlap and multiply
+- no negative multiplier
 
 ### The six details that make a render exact
 
-A shared loop makes these structural rather than a matter of discipline. They
-are recorded because any future second implementation, such as the web one in
-M10, must reproduce all six.
+A shared loop makes these details structural rather than a matter of discipline.
+This page records them because any future second implementation, for example the
+web one in M10, must reproduce all six.
 
 1. **Truncation, not rounding.** The conversion back to int16 is
    `(int16_t)scaled`, a C cast, which truncates toward zero. An implementation
-   that rounds is off by one on about half of all scaled samples.
-2. **Clamp before the cast**, at `+32767` and `-32768`, in float.
-3. **The envelope offset is absolute within the region.** It is
-   `written + frame`, not an offset inside the block. This is what lets an
-   exporter using 4096-frame chunks and a player using device-sized blocks agree.
-4. **Gain multiplies the envelope**, and the product is compared against exactly
-   `1.0f` to skip the scaling loop. Every int16 is exactly representable in
-   float32, so the skip is an optimization rather than a semantic.
-5. **Regions of zero or negative length are skipped**, which changes the total
-   output length.
-6. **A source that ends early is not an error.** The reader writes what exists
-   and moves to the next region.
+   that rounds differs by one on approximately half of all scaled samples.
+2. **The clamp comes before the cast.** The clamp is at `+32767` and `-32768`,
+   in float.
+3. **The envelope offset is absolute within the region.** The offset is
+   `written + frame`, not an offset inside the block. This is why an exporter
+   with 4096-frame chunks and a player with device-sized blocks agree.
+4. **Gain multiplies the envelope.** The render loop compares the product
+   against exactly `1.0f` to skip the scaling loop. Every int16 is exactly
+   representable in float32, so the skip is an optimization rather than a
+   semantic.
+5. **The render loop skips regions of zero or negative length.** This changes
+   the total output length.
+6. **A source that ends early is not an error.** The source reader writes what
+   exists and moves to the next region.
 
 ---
 
 ## M7 - Sound: done
 
-The device layer, and nothing about correctness.
+M7 adds the device layer. It changes nothing about correctness.
 
-- `wf_playback` opens a miniaudio playback device. The library was already
-  vendored and already compiled for capture.
-- A lock-free SPSC ring of int16 samples, mirroring the capture PCM ring.
-- The feeder runs on a C thread, filling ahead of the playhead.
-- An underrun counter, surfaced the way `CaptureSession.dropped` is.
+- `wf_playback` opens a miniaudio playback device. The package already vendored
+  the library and already compiled it for capture.
+- A lock-free SPSC ring of int16 samples mirrors the capture PCM ring.
+- The feeder runs on a C thread and fills ahead of the playhead.
+- The API shows an underrun counter, in the same way as
+  `CaptureSession.dropped`.
 
-**Exit criterion.** Drive a 30-second document through the ring and assert the
-frames the consumer received match the frames M6 renders offline. Assert the
-underrun count is zero.
+**Exit criterion.** Drive a 30-second document through the ring. Then assert
+that the frames that the consumer received match the frames that M6 renders
+offline. Assert that the underrun count is zero.
 
-Status: 6 tests in `test/playback_test.dart`, and the full suite is at 176.
+Status: 6 tests in `test/playback_test.dart`. The full suite is at 176 tests.
 
-**The exit criterion changed shape, and the reason is worth recording.** It said
+**The exit criterion changed shape, and this page records the reason.** It said
 "play through the miniaudio null backend, which runs headless in CI". The null
-backend does run headless, but it also paces itself against a simulated clock,
-so a 30-second document costs 30 seconds of CI wall time.
+backend does run headless. It also paces itself against a simulated clock, so a
+30-second document costs 30 seconds of CI wall time.
 
-`wf_playback_pull` is public instead, and a test drives it directly. That is the
-same decision `wf_capture_feed` already embodies: the audio-thread entry point
-is exported so the realtime path is testable on every platform with no device
-attached, and it is the same code a real speaker drives. The consumer in the
-test waits for a full block before taking one, exactly as a well-provisioned
-device does, which is what keeps the underrun assertion meaningful rather than
-tautological. The device path itself gets a smoke test: it either opens or
-returns `WF_ERR_DEVICE`, and what it must not do is block.
+`wf_playback_pull` is public instead, and a test drives it directly.
+`wf_capture_feed` already shows the same decision. The package exports the
+audio-thread entry point, so a test can drive the realtime path on every
+platform with no device attached. It is also the same code that a real speaker
+drives. The consumer in the test waits for a full block before it takes one,
+exactly as a well-provisioned device does. This behavior keeps the underrun
+assertion meaningful rather than tautological.
+
+The device path itself gets a smoke test. The device either opens or returns
+`WF_ERR_DEVICE`. It must not block.
 
 ### The one piece of per-platform code in the package
 
-miniaudio has a thread abstraction and keeps it private: `ma_thread_create` is
-`static`, while only the mutex, event and semaphore primitives carry `MA_API`.
+miniaudio has a thread abstraction and keeps it private. `ma_thread_create` is
+`static`, and only the mutex, event and semaphore primitives carry `MA_API`.
 Rather than vendor a second threading library for three functions,
 `wf_playback.c` carries a thread, a join and a sleep behind `#if defined(_WIN32)`.
 
-That is a real departure for a package with no per-platform code anywhere else,
-so it is written down rather than left to be discovered. The alternative was a
-feeder driven from Dart, which the architecture doc rules out: one garbage
-collection becomes an audible dropout.
+That is a real departure for a package with no per-platform code anywhere else.
+Therefore this page records it rather than leaves it for a reader to discover.
+The alternative was a feeder that Dart drives. The architecture page rejects
+that alternative, because one garbage collection becomes an audible dropout.
 
-The feeder polls rather than waiting on an event. It wakes every 2 ms, tops up
-the ring, and sleeps again. With a ring measured in seconds it only has to keep
-up on average, so a condition variable would buy nothing and cost another two
-platform paths.
+The feeder polls and does not wait on an event. It wakes every 2 ms, fills the
+ring, and sleeps again. The ring is measured in seconds, so the feeder only has
+to match the device rate on average. A condition variable gives nothing and
+costs another two platform paths.
 
 ### Transport and threading
 
 Playback is the capture pipeline pointed the other way, and the symmetry is
 worth the reuse. In capture, the audio thread produces reduced frames into a
-lock-free ring and Dart drains it on a timer. In playback, a feeder fills a
-lock-free ring with rendered frames and the audio thread consumes them. In both,
-the audio callback must not allocate, take a lock, or call into Dart.
+lock-free ring, and Dart drains the ring on a timer. In playback, a feeder fills
+a lock-free ring with rendered frames, and the audio thread consumes them. In
+both, the audio callback must not allocate, take a lock, or call into Dart.
 
 **The feeder is a C thread, not a Dart timer.** This is the one place where
 playback departs from the capture shape. Capture tolerates a late drain, because
-the ring holds about six seconds and a stalled consumer loses nothing. Playback
-tolerates nothing of the kind. An empty ring means the device emits silence, and
-one garbage collection or one janky frame becomes an audible dropout. Dart stays
-out of the audio path.
+the ring holds approximately six seconds and a stalled consumer loses nothing.
+Playback tolerates nothing of the kind. An empty ring means that the device
+emits silence, and one garbage collection or one late UI frame becomes an
+audible dropout. Dart must not enter the audio path.
 
 ---
 
 ## M8 - Transport: done
 
-`PlaybackSession`, opened by `MonowavePlatform.openPlayback`, mirroring
+`MonowavePlatform.openPlayback` opens a `PlaybackSession`. This mirrors
 `CaptureSession` and `openCapture`.
 
-- `play`, `pause`, `seek`, `position`, `duration`, `isPlaying`, `isFinished`
-  and `underruns`.
+- `PlaybackSession` has `play`, `pause`, `seek`, `position`, `duration`,
+  `isPlaying`, `isFinished` and `underruns`.
 - Position comes from the consumed-frame counter of the device.
-- `FakePlaybackSession` in `lib/testing.dart`.
+- `lib/testing.dart` has `FakePlaybackSession`.
 
-Status: 18 tests in `test/transport_test.dart`, and the full suite is at 194.
+Status: 18 tests in `test/transport_test.dart`. The full suite is at 194 tests.
 
 **The seek mechanism is a handshake, not a per-frame generation tag.** This page
 sketched a generation counter that the audio callback compares against each
-frame it is about to emit. Doing that literally means storing a generation
-beside every slot in the ring, which is a lot of memory and bookkeeping for a
-rare event.
+frame it is about to emit. A literal implementation of that sketch stores a
+generation beside every slot in the ring. That is a lot of memory and
+bookkeeping for a rare event.
 
-Instead the party that can afford to wait does the waiting. `wf_playback_seek`
-raises a `seeking` flag, then blocks its own caller until the consumer has left
-the audio callback and the feeder has parked. At that point nobody is touching
-the ring and it can be reset outright. The audio callback emits silence while
-the flag is up, which is the same audible result. If the other two sides do not
-stand down within five seconds the seek fails rather than resetting a ring
-somebody is still inside.
+Instead, the party that can afford to wait is the party that waits.
+`wf_playback_seek` raises a `seeking` flag. Then it blocks its own caller until
+the consumer leaves the audio callback and the feeder parks. At that point no
+thread touches the ring, and the seek can reset it outright. The audio callback
+emits silence while the flag is up, and the audible result is the same.
+
+If the other two sides do not stop within five seconds, the seek fails. It does
+not reset a ring that a thread is still inside.
 
 `PlaybackSession` does **not** implement `MonoPlaybackController`. That
 interface lives in monokit, and a headless package must not depend on the design
-system. The adapter is the few lines a host writes.
+system. The adapter is the few lines that a host writes.
 
-**Exit criteria**, three of them:
+There are three **exit criteria**:
 
-- **A seek lands where it says.** Seek to a time, read one frame, and assert it
-  matches the frame M6 renders at that offset. WAV is sample-exact. MP3 is
-  within one frame, asserted as a bound rather than hidden.
+- **A seek lands where it says.** Seek to a time. Then read one frame. Assert
+  that the frame matches the frame that M6 renders at that offset. WAV is
+  sample-exact. MP3 is within one frame, and the test asserts that bound rather
+  than hides it.
 - **The clock does not drift.** Across 30 seconds of null-backend playback,
   `position` tracks consumed frames within one device buffer and never moves
-  backwards.
+  backward.
 - **The fake matches.** `FakePlaybackSession` in `lib/testing.dart` passes the
   same conformance suite as the real one.
 
@@ -208,51 +219,51 @@ system. The adapter is the few lines a host writes.
 
 The temptation is to advance `position` on a Dart timer. `DemoPlayer` does
 exactly that, which is correct for a fake and wrong here. A timer drifts against
-the audio clock immediately, and the playhead then sits where the sound is not.
+the audio clock immediately, and then the playhead is not where the sound is.
 
-Position comes from the frames the device actually consumed. An atomic counter
-in C holds that number, minus the buffering latency the device reports. Dart
+Position comes from the frames that the device consumed. An atomic counter in C
+holds that number, minus the buffering latency that the device reports. Dart
 polls the counter on a ticker and republishes it. The device is the clock.
 
 ### Seeking without a glitch
 
-A seek must move the decoder and discard everything rendered ahead of the
-playhead, without the audio callback ever reading a half-written ring.
+A seek must move the decoder and erase all frames that are already rendered
+ahead of the playhead. The audio callback must never read a half-written ring.
 
 The mechanism is a generation counter. Dart raises it. The feeder sees the
 change, seeks again, and refills from the new position. The audio callback
-compares the generation on the frames it is about to emit, and emits silence for
-any stale frame. A few milliseconds of silence is the correct failure mode for a
-seek.
+compares the generation on the frames that it is about to emit, and emits
+silence for any stale frame. A few milliseconds of silence is the correct
+failure mode for a seek.
 
 Seek accuracy depends on the decoder. WAV is sample-exact. MP3 seeks to a frame
-boundary of about 1152 samples, which is 26 ms at 44.1 kHz. A seek into an MP3
-region lands on that boundary and then decodes forward to the exact frame.
+boundary of approximately 1152 samples, which is 26 ms at 44.1 kHz. A seek into
+an MP3 region lands on that boundary and then decodes forward to the exact
+frame.
 
 ### Who owns the region walk
 
-The C core owns it, and Dart asks it questions. The alternative is one walk in
-Dart to map a seek and a second walk in C to render. Two implementations of one
-traversal disagree eventually, over an edge case such as a zero-length region.
-That disagreement shows up as a playhead that is correct until a document takes
-an unusual shape.
+The C core owns the region walk, and Dart asks the C core questions. The
+alternative is one walk in Dart to map a seek and a second walk in C to render.
+Two implementations of one traversal disagree eventually, over an edge case such
+as a zero-length region. That disagreement appears as a playhead that is correct
+until a document takes an unusual shape.
 
 `WaveformTimeline` keeps its job, which is the conversion between time and
-samples. That is pure maths over a sample rate and needs no walk.
+samples. That is pure mathematics over a sample rate and needs no walk.
 
 ---
 
 ## M9 - Live document updates: done
 
-The feature that justifies the work: drag a trim handle, hear the result, and
-never stop playback.
+M9 is the feature that justifies the work. A user drags a trim handle and hears
+the result, and playback never stops.
 
-- `PlaybackSession.setDocument` swaps the region list underneath a running
-  session.
+- `PlaybackSession.setDocument` swaps the region list while the session plays.
 - The playhead keeps its output position and clamps to the new end.
 
-Status: 7 more tests in `test/transport_test.dart`, and the full suite is at
-201.
+Status: 7 more tests in `test/transport_test.dart`. The full suite is at 201
+tests.
 
 **Exit criterion.** Change a document mid-playback. Assert that the output after
 the change matches a fresh render of the new document from that offset. Assert
@@ -260,23 +271,24 @@ that the underrun count is still zero.
 
 ### The open question, answered: one call, not two
 
-This page asked whether a feeder swap (gain, fades) and a timeline change (a
-trim, a delete, a split) should be separate calls, on the theory that the first
-is cheaper.
+This page asked a question. Must a feeder swap (gain, fades) and a timeline
+change (a trim, a delete, a split) be separate calls? The theory was that the
+first is cheaper.
 
-They are not. Both throw away whatever the ring had queued, because those frames
-were rendered through the old document, and the ring holds about a second. A
-change of gain alone is exactly as expensive as a trim, so a second entry point
-would buy a caller nothing but a decision to get wrong.
+A feeder swap is not cheaper. Both kinds erase all the frames in the ring,
+because a render through the old document produced those frames. The ring holds
+approximately one second. A change of gain alone is exactly as expensive as a
+trim. Therefore a second entry point gives a host nothing but one more decision
+to get wrong.
 
-What the two kinds do differ in is what the playhead *means* afterwards, and
-that is not something the API can decide. A gain change leaves output frame N
-pointing at the same audio. A trim that moves a region start does not. So
-`setDocument` keeps the playhead where it is - which is what a listener dragging
-a handle expects - and a host that wants otherwise calls `seek` immediately
-after.
+The two kinds do differ in the meaning of the playhead after the change. The API
+cannot decide that meaning. After a gain change, output frame N still points at
+the same audio. A trim that moves a region start does not keep that property.
+Therefore `setDocument` keeps the playhead where it is, which is what a user
+who drags a handle expects. A host that wants another behavior calls `seek`
+immediately after.
 
-Mechanically the swap is a seek with a new region list, so it reuses the M8
+Mechanically, the swap is a seek with a new region list, so it reuses the M8
 handshake unchanged. That is also why `wf_playback_seek` and
 `wf_playback_set_regions` now share `wf_playback_acquire` and
 `wf_playback_release`.
@@ -285,41 +297,43 @@ handshake unchanged. That is also why `wf_playback_seek` and
 
 ## M10 - Web renders through the same C loop: done
 
-A WebAudio graph was the plan. It is not what web turned out to need.
+A WebAudio graph was the plan. It is not what web needed.
 
 - `wf_render_open_memory` renders from bytes rather than from a path.
 - `MonowavePlatform.renderPcmBytes` is the render path on every target, and the
-  only one on web.
+  only render path on web.
 - The WASM build exports the renderer, so web runs the same loop as the
   exporter.
 
 Status: 6 more tests in `test/render_test.dart`, three in the browser parity
-test, and a render check in `tool/verify_wasm.mjs`. The full suite is at 207.
+test, and a render check in `tool/verify_wasm.mjs`. The full suite is at 207
+tests.
 
 **Exit criterion.** Assert a byte-for-byte match between the web render and the
-native one. MP3 was to be asserted for shape rather than equality.
+native one. The plan was to assert MP3 for shape rather than for equality.
 
 ### The premise was wrong, and the guarantee is better for it
 
-This page said web must decode through the browser and apply the envelope in an
-AudioWorklet, and that MP3 could therefore only be approximate on web, because
-Chrome's decoder is not `dr_mp3`. That hole went into the architecture doc as a
-cost to accept.
+This page said that web must decode through the browser and apply the envelope
+in an AudioWorklet. It also said that MP3 can only be approximate on web,
+because the decoder in Chrome is not `dr_mp3`. That hole went into the
+architecture page as a cost to accept.
 
-It was not real. `DR_WAV_NO_STDIO` and its siblings remove only the *file* entry
-points. The WASM build already carried all three decoders with their memory
-APIs, because `wf_decode_memory` has always used them. Nothing needed decoding
-through the browser, and no second implementation of the render was needed.
+The premise was not real. `DR_WAV_NO_STDIO` and its siblings remove only the
+*file* entry points. The WASM build already carried all three decoders with
+their memory APIs, because `wf_decode_memory` always used them. No code needed
+to decode through the browser, and no second implementation of the render was
+necessary.
 
 So the split moved. Only `wf_source_open` and `wf_export_wav` sit behind the
-stdio guard now. The source layer, the region walk, the envelope and the render
-loop are shared, and web reaches them through `wf_render_open_memory`.
+stdio guard now. All targets share the source layer, the region walk, the
+envelope and the render loop. Web reaches them through `wf_render_open_memory`.
 
 **A rendered document is byte-identical on all six targets, for every format.**
-The equality claim has no exception, and the concession is withdrawn rather than
-lived with. `tool/verify_wasm.mjs` renders through the WASM module and compares
-every sample against a native render; changing the int16 conversion from
-truncation to rounding fails it at sample 1.
+The equality claim has no exception, and this page withdraws the concession
+rather than lives with it. `tool/verify_wasm.mjs` renders through the WASM
+module and compares every sample against a native render. A change of the int16
+conversion from truncation to rounding makes the check fail at sample 1.
 
 ### Web plays, through a WebAudio graph
 
@@ -329,41 +343,44 @@ The graph is deliberately plain. The whole render goes into an `AudioBuffer`
 before playback starts, and an `AudioBufferSourceNode` plays it. There is no
 ring and no feeder, because the browser owns the audio thread and there is
 nothing for a feeder to race. That is the right shape for a preview of an edit
-and the wrong one for an audiobook: a long document costs its whole length in
-memory, at four bytes per frame per channel. The limit is stated rather than
-discovered.
+and the wrong shape for an audiobook. A long document costs its whole length in
+memory, at four bytes per frame per channel. This page states the limit rather
+than lets a reader discover it.
 
-`underruns` is always zero there, and that is a fact rather than a stub. An
-underrun is a feeder losing a race with a device. With the render resident up
-front the race does not exist, and the cost is paid in memory instead.
+`underruns` is always zero there, and that is a fact rather than a stub. A
+feeder that loses a race with a device causes an underrun. The render is
+resident before playback starts, so that race does not exist. The cost moves to
+memory instead.
 
 The playhead still comes from the audio clock. `AudioContext.currentTime`
-advances with the hardware, which is the same rule the native session follows by
-counting frames the device consumed.
+advances with the hardware. The native session obeys the same rule and counts
+the frames that the device consumed.
 
 **One thing a host must know:** browsers refuse to start an `AudioContext`
-without a user gesture, and report it as a context stuck in `suspended` rather
-than as an error. `play()` detects that and throws `PlaybackUnavailable` saying
-to call it from a tap. A driven test has no gesture, so the browser test asserts
-`play` the way the native test asserts a missing device - it either works or it
-reports why, and what it must not do is hang.
+without a user gesture. They report this refusal as a context stuck in
+`suspended` rather than as an error. `play()` detects that state and throws
+`PlaybackUnavailable`. The message says to call `play()` from a tap.
 
-`openPlayback` with a path still throws on web, which has no filesystem.
+A driven test has no gesture. Therefore the browser test asserts `play` in the
+same way as the native test asserts a missing device. The call either works or
+reports the reason. It must not hang.
+
+`openPlayback` with a path still throws on web, because web has no filesystem.
 
 ### What did not port, and why that is right
 
 The M7 to M9 transport - the ring, the feeder thread, the seek handshake - is
-native-only by design. A browser has its own scheduler and its own audio thread,
-and reimplementing a feeder against them would be inventing a problem. What
-crosses is the part that must: the samples, from the same C loop.
+native-only by design. A browser has its own scheduler and its own audio thread.
+A second implementation of a feeder against them invents a problem. Only the
+necessary part crosses: the samples, from the same C loop.
 
 ## What playback will not do
 
 | | Why |
 |---|---|
-| Video | Wrong architecture. Preview belongs in monolens, whose native side already carries the Core Image and Media3 effect chains. |
+| Video | Wrong architecture. Preview belongs in monolens. The native side of monolens already carries the Core Image and Media3 effect chains. |
 | Replace `just_audio` or `media_kit` | They play files well. The gap is a preview of an edit before it renders. |
-| Implement `MonoPlaybackController` | That interface lives in monokit. Monowave must not depend on the design system. The adapter is the few lines a host writes, and `DemoPlayer` is already that shape. |
+| Implement `MonoPlaybackController` | That interface lives in monokit. monowave must not depend on the design system. The adapter is the few lines that a host writes, and `DemoPlayer` is already that shape. |
 | Effects beyond gain and fades | The document defines the edit. A document that cannot express an effect cannot preview it either. |
 | AAC / M4A | Playback inherits the decoder set, so it plays what the pyramid can draw and nothing else. |
 
@@ -372,8 +389,8 @@ crosses is the part that must: the samples, from the same C loop.
 - **Whether a document swap can avoid a seek.** A change of gain is inaudible
   mid-playback. A change to a trim point moves everything after it. One API call
   for both is probably the wrong shape.
-- **Whether the underrun counter can fail a test.** It is the right signal, but
-  its value depends on the scheduling of the CI machine. A threshold is flaky,
-  and a strict zero can be flaky too.
+- **Whether the underrun counter can fail a test.** The counter is the right
+  signal, but its value depends on the scheduling of the CI machine. A threshold
+  makes the test fail at random, and a strict zero can do the same.
 - **What happens when the source file changes underneath a session.** A document
   references a path, not a handle.

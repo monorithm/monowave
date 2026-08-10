@@ -4,11 +4,11 @@ import 'dart:typed_data';
 import '../edit/waveform_document.dart';
 import 'playback_session.dart';
 
-/// Renders a document and reports the shape of what it produced.
+/// Renders a document and reports the shape of the result.
 ///
 /// The session needs the channel count and the rate to build a graph, and the
-/// renderer is the only thing that knows them. Passing one callback rather than
-/// loose metadata keeps them from being supplied inconsistently.
+/// renderer is the only component that knows them. One callback, rather than
+/// loose metadata, keeps these two values consistent.
 typedef WebRender =
     Future<({Int16List pcm, int channels, int sampleRate})> Function(
       Uint8List bytes,
@@ -43,18 +43,18 @@ extension type _BufferSource._(JSObject _o) implements JSObject {
   external set onended(JSFunction value);
 }
 
-/// A playback session that hands rendered samples to a WebAudio graph.
+/// A playback session that gives rendered samples to a WebAudio graph.
 ///
-/// Web has no filesystem and no miniaudio, so this shares nothing with
-/// `FfiPlaybackSession` below the samples - and everything at the samples. The
-/// document is rendered by the same C loop the exporter runs, compiled to WASM,
-/// so what a browser plays is what an export would write.
+/// Web has no filesystem and no miniaudio. Therefore, this class shares no
+/// implementation with `FfiPlaybackSession`, and it shares the samples
+/// exactly. The same C loop that the exporter runs, compiled to WASM, renders
+/// the document. Therefore, what a browser plays is what an export writes.
 ///
 /// There is no ring and no feeder thread here. The browser owns the audio
-/// thread, and the whole render goes into an `AudioBuffer` up front. That is
-/// the right shape for a preview of an edit and the wrong one for an audiobook,
-/// which is a limit worth knowing rather than discovering: a long document
-/// costs its whole length in memory, at four bytes a frame per channel.
+/// thread, and all the rendered samples go into an `AudioBuffer` at the start.
+/// That shape is correct for a preview of an edit and wrong for an audiobook.
+/// This limit is better to know than to discover. A long document costs its
+/// whole length in memory, at four bytes per frame per channel.
 class WebPlaybackSession implements PlaybackSession {
   WebPlaybackSession._(
     this._context,
@@ -66,8 +66,8 @@ class WebPlaybackSession implements PlaybackSession {
 
   /// Renders [document] and stages it for playback.
   ///
-  /// [render] is injected rather than reached for, so this file never imports
-  /// the platform that owns it.
+  /// The caller injects [render], so this file never imports the platform that
+  /// owns it.
   static Future<WebPlaybackSession> open({
     required Uint8List bytes,
     required WaveformDocument document,
@@ -95,12 +95,12 @@ class WebPlaybackSession implements PlaybackSession {
     );
   }
 
-  /// Deinterleaves into an `AudioBuffer`, converting to float on the way.
+  /// Deinterleaves into an `AudioBuffer` and converts to float on the way.
   ///
-  /// The conversion is a device concern, not a render one. miniaudio does the
-  /// same thing natively on its way to the sound card. The samples this played
-  /// from are still the bytes an export would write; what changes here is only
-  /// the form the browser insists on.
+  /// The conversion is a concern of the device and not of the render step.
+  /// miniaudio does the same thing natively on its way to the sound card. The
+  /// samples that this class plays are still the bytes that an export writes.
+  /// Only the form changes, because the browser requires that form.
   static _AudioBuffer _bufferOf(
     _AudioContext context,
     Int16List pcm,
@@ -131,18 +131,22 @@ class WebPlaybackSession implements PlaybackSession {
   final _AudioContext _context;
   _AudioBuffer _buffer;
 
-  /// Frames the document renders to. Kept rather than read back from
-  /// [_buffer], which is padded to one frame when the render is empty.
+  /// Frames that the document renders to.
+  ///
+  /// This class keeps the count and does not read it back from [_buffer]. If
+  /// the render step produces no frames, [_buffer] has a pad of one frame.
   int _frames;
 
   WaveformDocument _document;
 
-  /// What a re-render needs. Held so [setDocument] does not need the platform.
+  /// The values that a new render needs. This class holds them, so
+  /// [setDocument] does not need the platform.
   final ({Uint8List bytes, WebRender render, int channels, int rate}) _pcm;
 
   _BufferSource? _source;
 
-  /// Where the playhead was when the current source node started, in seconds.
+  /// The position of the playhead, in seconds, at the start of the current
+  /// source node.
   double _offset = 0;
 
   /// `AudioContext.currentTime` at that moment.
@@ -179,19 +183,23 @@ class WebPlaybackSession implements PlaybackSession {
 
   /// Always zero on web, and not a stub.
   ///
-  /// An underrun is the feeder losing a race with the device. There is no
-  /// feeder here: the whole render is resident before playback starts, so the
-  /// race cannot happen. The cost is paid in memory instead, up front.
+  /// An underrun is a race that the feeder loses against the device. There is
+  /// no feeder here. All the rendered samples are resident before playback
+  /// starts, so that race cannot happen. The cost is memory instead, at the
+  /// start.
   @override
   int get underruns => 0;
 
   /// Awaits a WebAudio promise, but never forever.
   ///
-  /// A suspended `AudioContext` leaves `resume()` pending until a user gesture
-  /// arrives, and a gesture may never arrive - in a driven test it certainly
-  /// does not. `close()` on such a context can behave the same way. Blocking on
-  /// either turns "no audio" into "no progress", which is a hang rather than a
-  /// message, so the state is read afterwards instead of trusted to a promise.
+  /// A suspended `AudioContext` keeps `resume()` pending until a user gesture
+  /// arrives. A gesture does not always arrive, and in a driven test a gesture
+  /// certainly does not arrive. `close()` on such a context can behave in the
+  /// same way.
+  ///
+  /// A block on either promise makes "no audio" into "no progress", which is a
+  /// hang and not a message. Therefore, this method reads the state afterwards
+  /// and does not trust a promise.
   static Future<void> _settle(JSPromise<JSAny?> promise) => promise.toDart
       .timeout(const Duration(milliseconds: 500), onTimeout: () => null);
 

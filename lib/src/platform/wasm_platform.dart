@@ -10,10 +10,10 @@ import '../edit/waveform_document.dart';
 import '../model/waveform_peaks.dart';
 import 'monowave_platform.dart';
 
-/// The default [MonowavePlatform] on web.
+/// This function returns the default [MonowavePlatform] on web.
 MonowavePlatform defaultPlatform() => WasmMonowavePlatform();
 
-/// WASI's ENOSYS. Returned by the file-descriptor stubs below.
+/// The ENOSYS code of WASI. The file-descriptor stubs below return this code.
 const _enosys = 52;
 
 @JS('WebAssembly.instantiate')
@@ -30,9 +30,10 @@ extension type _Imports._(JSObject _o) implements JSObject {
   external factory _Imports({_Env env, _Wasi wasi_snapshot_preview1});
 }
 
-/// libc drags three file-descriptor imports in even though the decoders' file
-/// halves are compiled out, and they are unreachable from `wf_decode_memory`.
-/// ENOSYS stubs satisfy the linker without pretending web has a filesystem.
+/// libc adds three file-descriptor imports. The build does not compile the
+/// file halves of the decoders, and `wf_decode_memory` cannot reach these
+/// imports. The ENOSYS stubs satisfy the linker, and they do not pretend that
+/// web has a filesystem.
 extension type _Wasi._(JSObject _o) implements JSObject {
   // Wire names, not Dart ones.
   // ignore_for_file: non_constant_identifier_names
@@ -43,10 +44,10 @@ extension type _Wasi._(JSObject _o) implements JSObject {
   });
 }
 
-/// `-sALLOW_MEMORY_GROWTH` makes the module import this so JS can refresh its
-/// cached heap views. Monowave re-reads the buffer on every call instead, so the
-/// callback does nothing - but the import must still be satisfied or
-/// instantiation throws.
+/// `-sALLOW_MEMORY_GROWTH` makes the module import this callback, so that JS
+/// can refresh its cached heap views. monowave re-reads the buffer on every
+/// call instead, so the callback does nothing. The module must still get this
+/// import. If the import is absent, instantiation throws.
 extension type _Env._(JSObject _o) implements JSObject {
   external factory _Env({JSFunction emscripten_notify_memory_growth});
 }
@@ -55,10 +56,11 @@ extension type _Instance._(JSObject _o) implements JSObject {
   external _Core get exports;
 }
 
-/// The module's exports, typed.
+/// The typed exports of the module.
 ///
-/// Extension types rather than `dart:js_interop_unsafe` so a rename in `src/`
-/// is a compile error here instead of a runtime `undefined is not a function`.
+/// This code uses extension types and not `dart:js_interop_unsafe`. Therefore
+/// a rename in `src/` is a compile error here, and not a runtime `undefined is
+/// not a function`.
 extension type _Core._(JSObject _o) implements JSObject {
   @JS('wf_abi_version')
   external int abiVersion();
@@ -130,8 +132,8 @@ extension type _Core._(JSObject _o) implements JSObject {
   external void free(int ptr);
   external _Memory get memory;
 
-  /// STANDALONE_WASM builds the reactor model, so static initializers do not
-  /// run until this is called.
+  /// STANDALONE_WASM builds the reactor model. Therefore the static
+  /// initializers do not run before this method runs.
   @JS('_initialize')
   external void initialize();
 }
@@ -140,13 +142,15 @@ extension type _Memory._(JSObject _o) implements JSObject {
   external JSArrayBuffer get buffer;
 }
 
-/// Calls the same C core the native targets do, compiled to WASM by
-/// `tool/build_wasm.sh` and shipped as `assets/monowave.wasm`.
+/// This class calls the same C core that the native targets call.
+/// `tool/build_wasm.sh` compiles that core to WASM and ships it as
+/// `assets/monowave.wasm`.
 ///
-/// Running the same source everywhere is the property this whole architecture
-/// exists to guarantee, so there is deliberately no pure-Dart fallback here: a
-/// shim would pass CI while quietly making web the one target that answers
-/// differently.
+/// This whole architecture exists to guarantee one property: the same source
+/// runs everywhere. Therefore there is deliberately no pure-Dart fallback
+/// here. If monowave adds a shim, the shim passes CI. The shim also makes web
+/// the one target that answers differently, and nothing reports that
+/// difference.
 class WasmMonowavePlatform implements MonowavePlatform {
   _Core? _exports;
   Future<void>? _loading;
@@ -186,11 +190,13 @@ class WasmMonowavePlatform implements MonowavePlatform {
         'core on web.',
       ));
 
-  /// The module's linear memory, re-read on every call rather than cached.
+  /// The linear memory of the module. This method re-reads that memory on
+  /// every call, and it does not cache the memory.
   ///
-  /// Growing the WASM heap detaches every outstanding view over it, so a cached
-  /// buffer survives right up until an allocation makes it silently wrong. The
-  /// symptom is corrupt peaks that look like a decoder bug.
+  /// When the WASM heap grows, the heap detaches every outstanding view over
+  /// it. Therefore a cached buffer stays correct only until an allocation
+  /// makes it wrong, and nothing reports that change. The symptom is corrupt
+  /// peaks that look like a bug in the decoder.
   ByteBuffer _heapOf(_Core core) => core.memory.buffer.toDart;
 
   @override
@@ -311,10 +317,10 @@ class WasmMonowavePlatform implements MonowavePlatform {
     render: _render,
   );
 
-  /// The render, with the shape of what it produced.
+  /// The render, with the shape of the audio that it produced.
   ///
-  /// A graph cannot be built without the channel count and the rate, and the
-  /// renderer is the only thing that knows them.
+  /// A graph needs the channel count and the sample rate, and the renderer is
+  /// the only part that knows them.
   Future<({Int16List pcm, int channels, int sampleRate})> _render(
     Uint8List bytes,
     WaveformDocument document,
@@ -447,15 +453,17 @@ class WasmMonowavePlatform implements MonowavePlatform {
     '. Decode and rendering work on web today.',
   );
 
-  /// Copies both series of the pyramid out of the WASM heap, unlike the FFI
-  /// path which views them in place.
+  /// This method copies both series of the pyramid out of the WASM heap. The
+  /// FFI path is different, because it views the two series in place.
   ///
-  /// This is deliberate and it is the one place web pays more than native.
-  /// Growing the heap detaches every view over it, so a long-lived view would
-  /// stay correct only until the next allocation anywhere in the module - an
-  /// aliasing bug that would surface as corrupt peaks much later. Copying costs
-  /// a few hundred kilobytes for a normal recording; native keeps the zero-copy
-  /// path, which is what an audiobook needs.
+  /// This copy is deliberate, and it is the one place where web pays more than
+  /// native. When the heap grows, the heap detaches every view over it.
+  /// Therefore a long-lived view stays correct only until the next allocation
+  /// anywhere in the module. That is an aliasing bug, and it surfaces as
+  /// corrupt peaks much later.
+  ///
+  /// The copy costs a few hundred kilobytes for a normal recording. Native
+  /// keeps the zero-copy path, which is what an audiobook needs.
   WaveformPeaks _copyOut(_Core core, int peaks, int baseSamplesPerPixel) {
     final levelCount = core.peaksLevels(peaks);
     final levels = <Int16List>[];
@@ -486,7 +494,7 @@ class WasmMonowavePlatform implements MonowavePlatform {
   }
 }
 
-/// Maps the C error codes in `monowave.h` onto [DecodeFailure].
+/// This function maps the C error codes in `monowave.h` onto [DecodeFailure].
 MonowaveDecodeException _failure(int code, int size) {
   final failure = switch (code) {
     1 => DecodeFailure.unreadable,

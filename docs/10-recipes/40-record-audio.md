@@ -1,15 +1,20 @@
 # Record audio
 
-Capture reduces each hop of audio to a frame on the audio thread and publishes it through a lock-free ring, which the Dart side drains on a timer.
-Optionally it writes the raw PCM to a WAV at the same time.
+On the audio thread, capture reduces each hop of audio to a frame.
+Capture then publishes the frame through a lock-free ring.
+The Dart side drains this ring on a timer.
+Capture can also write the raw PCM to a WAV file at the same time.
 
 ## Ask for the permission first
 
-Monowave deliberately does **not** request the microphone permission.
-A headless package has no UI to explain why it is asking, and you do -- and two requesters produce two prompts.
+monowave deliberately does **not** request the microphone permission.
+A headless package has no UI to explain the reason for the request, and your application has one.
+Also, two requesters produce two prompts.
 
-Declare the usage strings ([platform notes](../30-reference/10-platforms.md) has them), ask with whatever permission plugin you already use, and only then open a session.
-`openCapture` throws `CaptureUnavailable` if the permission has not already been granted.
+Declare the usage strings ([platform notes](../30-reference/10-platforms.md) has them).
+Then ask for the permission with the permission plugin that your application already uses.
+Open a session only after these two steps.
+If the application does not already have the permission, `openCapture` throws `CaptureUnavailable`.
 
 ## Open a session
 
@@ -31,15 +36,15 @@ Every field is a realtime trade-off:
 
 | Field | Default | What it decides |
 |---|---|---|
-| `hop` | 512 | Samples per reduced frame. 512 at 44.1 kHz is about 86 frames a second -- comfortably above a 60 Hz display, small enough that the ring stays tiny. |
-| `ringCapacity` | 512 | Frames buffered before the producer starts dropping. About six seconds of slack at the default hop. |
-| `scopeCapacity` | -- | How many frames the rolling visualizer window retains. |
-| `maxDuration` | -- | How much history `stop()` can return. The buffer is allocated up front, because growing it would mean allocating on the audio thread. |
+| `hop` | 512 | Samples per reduced frame. At 44.1 kHz, a hop of 512 gives approximately 86 frames each second. This rate is more than a 60 Hz display needs, and it keeps the ring small. |
+| `ringCapacity` | 512 | The number of frames that the ring holds before the producer drops frames. At the default hop, this capacity gives approximately six seconds of slack. |
+| `scopeCapacity` | -- | How many frames the rolling visualizer window keeps. |
+| `maxDuration` | -- | How much history `stop()` can return. monowave allocates the buffer at the start, because growth of the buffer needs an allocation on the audio thread. |
 | `drainInterval` | -- | How often the consumer moves frames out of the ring. |
 | `recordTo` | null | Where to write the captured audio, or null to keep only the reduction. |
 
-Past `maxDuration` capture keeps running and `session.truncated` reports that the peaks are partial.
-The recording itself is unaffected.
+After `maxDuration`, capture continues and `session.truncated` reports that the peaks are partial.
+This limit does not affect the recording.
 
 ## Listen to frames
 
@@ -48,18 +53,19 @@ session.frames.listen((frame) => setState(() {}));
 ```
 
 `frames` is a broadcast stream, so a visualizer and a level meter can both listen.
-Each `CaptureFrame` is one hop, already reduced by the audio thread.
+Each `CaptureFrame` is one hop.
+The audio thread already reduced it.
 
 ## Tell a cosmetic drop from a real one
 
-Two counters, because the visualizer ring and the audio ring are separate and fail differently:
+There are two counters, because the visualizer ring and the audio ring are separate and fail in different ways:
 
 ```dart
 session.dropped;      // hops the consumer was too slow to collect -- cosmetic
 session.pcmDropped;   // samples the audio ring lost -- a hole in the file
 ```
 
-A non-zero `dropped` is the first thing to look at if bars stutter.
+If the bars stutter, a non-zero `dropped` is the first thing to examine.
 A non-zero `pcmDropped` is a real defect in the recording.
 [Architecture](../20-concepts/90-architecture.md) explains why the two rings are separate.
 
@@ -72,34 +78,61 @@ final peaks = await session.stop();
 await session.dispose();
 ```
 
-`pause` stops the device without touching the rings, the hop accumulator or the history, so a take continues rather than restarting.
-`session.isPaused` distinguishes it from stopped.
+`pause` stops the device.
+It does not change the rings, the hop accumulator or the history.
+A take therefore continues, and does not restart.
+`session.isPaused` shows the difference between a paused session and a stopped session.
 
-`stop` returns peaks for everything captured, built from the audio thread's own history rather than from what the visualizer happened to collect -- so they are complete even if the app was backgrounded and missed drains.
-**The caller owns them**: call `dispose()` on the peaks when you are done, separately from disposing the session.
+`stop` returns peaks for all of the captured audio.
+These peaks come from the history of the audio thread itself, and not from the frames that the visualizer collected.
+The peaks are therefore complete.
+The application can go to the background and miss drains, and the peaks stay complete.
 
-The output is 16-bit PCM WAV, which is also what the exporter reads, so a recording can be trimmed and exported without a second format in play.
+**The caller owns these peaks.**
+When you are done with the peaks, call `dispose()` on them.
+This call is separate from `dispose()` on the session.
+
+The output is 16-bit PCM WAV, which is also the format that the exporter reads.
+You can therefore trim and export a recording with only one format.
 
 ## Dispose the session
 
-`dispose()` closes the input device and releases everything the C side allocated for the session: both rings, the take history and the drain buffers.
-Call it, and call it as soon as the recording is over.
-It is idempotent, and it is separate from `stop()` -- `stop` ends the take and hands you peaks, `dispose` releases the session, and the peaks are disposed separately again.
+`dispose()` closes the input device.
+It also releases everything that the C core allocated for the session: both rings, the take history and the drain buffers.
+When the recording is over, call `dispose()` immediately.
+`dispose()` is idempotent.
 
-If a `recordTo` file is still open it is closed too, with the real sizes written into its header, so **cancelling** a recording -- `dispose()` with no `stop()` -- leaves a WAV a player can open rather than one that reads as empty.
-What it does not do is drain first: anything the audio thread published since the last pass is lost, because finishing a take is `stop()`'s job.
+`dispose()` is separate from `stop()`.
+`stop` ends the take and gives you the peaks.
+`dispose` releases the session.
+You dispose the peaks separately.
 
-The four counters (`produced`, `dropped`, `pcmDropped`, `truncated`) keep answering after disposal, frozen at their final values, so a widget reading one while it tears down does not have to guard the call.
-`start`, `pause`, `resume` and `stop` throw a `StateError` instead, and a host driving its own ticker will find `drain()` returning 0 rather than throwing.
+If a `recordTo` file is still open, `dispose()` closes the file and writes the real sizes into its header.
+Thus **canceling** a recording -- `dispose()` with no `stop()` -- leaves a WAV file that a player can open.
+The file does not read as empty.
 
-A session that is garbage collected without one **is** destroyed, by a finalizer over the same C call, so a forgotten `dispose()` cannot leave the microphone open for the life of the process.
-Treat that as a backstop rather than a substitute.
-It runs whenever the collector happens to reach the object, which may be long after the user believes recording stopped, and is not guaranteed to happen at all before the process exits.
-Nothing but `dispose()` releases the device promptly.
+`dispose()` does not drain the ring first.
+The data that the audio thread published after the last drain pass is lost, because `stop()` is the call that ends a take.
+
+The four counters (`produced`, `dropped`, `pcmDropped`, `truncated`) continue to answer after you dispose the session.
+They stay frozen at their final values.
+A widget that reads a counter during teardown therefore does not need to guard the call.
+`start`, `pause`, `resume` and `stop` throw a `StateError` instead.
+A host that drives its own ticker finds that `drain()` returns 0, and does not throw.
+
+If the garbage collector collects a session with no `dispose()` call, a finalizer **does** release it, with the same C call.
+A forgotten `dispose()` therefore cannot leave the microphone open for the life of the process.
+This finalizer is a backstop, and not a substitute for `dispose()`.
+
+The finalizer runs at the time when the collector reaches the object.
+That time can be long after the user believes that recording stopped.
+The finalizer is not guaranteed to run before the process exits.
+Only `dispose()` releases the device immediately.
 
 ## Not on web
 
-`WasmMonowavePlatform.openCapture` throws rather than pretending otherwise.
-Decoding and drawing work there; see [architecture](../20-concepts/90-architecture.md) for what capture on web would cost and why it is not miniaudio.
+`WasmMonowavePlatform.openCapture` throws, and does not pretend to capture audio.
+On web, monowave can still decode and draw.
+[Architecture](../20-concepts/90-architecture.md) explains the cost of capture on web, and the reason why capture on web is not miniaudio.
 
-To drive all of this in a test with no microphone, see [testing](./90-test-without-hardware.md).
+To drive these calls in a test with no microphone, read [testing](./90-test-without-hardware.md).

@@ -7,17 +7,21 @@ import '../edit/waveform_document.dart';
 import '../native/monowave_bindings.dart' as bindings;
 import 'playback_session.dart';
 
-/// A playback session backed by the C renderer, a lock-free ring and miniaudio.
+/// A playback session on the C renderer, a lock-free ring and miniaudio.
 ///
-/// Nothing here runs on the audio thread. The audio thread copies out of a ring
-/// and nothing else; a feeder thread in C keeps that ring ahead of it. This
-/// side only opens, seeks, and reads counters.
+/// No code here runs on the audio thread. The audio thread copies out of a
+/// ring and does nothing else. A feeder thread in C keeps that ring ahead of
+/// the audio thread. This side only opens, seeks, and reads counters.
 ///
-/// **Call [dispose] when finished.** A [NativeFinalizer] destroys a session
-/// that is collected without one, so dropping a session cannot leave an output
-/// device open indefinitely - but that is a backstop, not a substitute. It runs
-/// whenever the collector reaches the object, which may be long after playback
-/// ended. The same rule, and the same reasoning, as `FfiCaptureSession`.
+/// **Call [dispose] when you are finished.** A [NativeFinalizer] runs
+/// `wf_playback_destroy` on a session that the garbage collector collects
+/// without a call to [dispose]. Therefore, an abandoned session cannot keep an
+/// output device open indefinitely. The finalizer is a backstop and not a
+/// substitute.
+///
+/// When the collector reaches the object, the finalizer runs. That moment can
+/// be long after playback ended. The rule and the reason are the same as for
+/// `FfiCaptureSession`.
 class FfiPlaybackSession implements PlaybackSession, Finalizable {
   FfiPlaybackSession._(
     Pointer<bindings.WfPlayback> playback,
@@ -28,17 +32,19 @@ class FfiPlaybackSession implements PlaybackSession, Finalizable {
     _finalizer.attach(this, playback.cast(), detach: this);
   }
 
-  /// Destroys a session that was dropped without [dispose].
+  /// Runs `wf_playback_destroy` on a session that the garbage collector
+  /// collects without a call to [dispose].
   ///
   /// `wf_playback_destroy` stops the device and joins the feeder thread before
-  /// it frees anything, so this reclaims the output device and the thread as
-  /// well as the memory.
+  /// it frees memory. Therefore, this finalizer reclaims the output device,
+  /// the thread and the memory.
   static final _finalizer = NativeFinalizer(bindings.wfPlaybackDestroyAddress);
 
   /// The cushion between the feeder and the device.
   ///
-  /// About a second at 44.1 kHz. The feeder only has to keep up on average, and
-  /// a deep ring is what absorbs a slow disk or a busy machine.
+  /// This size is approximately one second at 44.1 kHz. The feeder must match
+  /// the device on average only. A deep ring absorbs a slow disk or a busy
+  /// machine.
   static const _ringFrames = 65536;
 
   static Future<FfiPlaybackSession> open({
@@ -85,11 +91,11 @@ class FfiPlaybackSession implements PlaybackSession, Finalizable {
     }
   }
 
-  /// The same session over bytes already in memory.
+  /// The same session over bytes that are already in memory.
   ///
-  /// The bytes are copied by the C side, because dr_libs reference a caller's
-  /// buffer rather than copying it and the feeder reads from it on another
-  /// thread.
+  /// The C side copies the bytes for two reasons. The dr_libs code references
+  /// the buffer of the caller and does not copy it. The feeder reads from that
+  /// buffer on another thread.
   static Future<FfiPlaybackSession> openBytes({
     required Uint8List bytes,
     required WaveformDocument document,
@@ -137,7 +143,7 @@ class FfiPlaybackSession implements PlaybackSession, Finalizable {
     }
   }
 
-  /// Lays a document out as `wf_region` structs.
+  /// Writes a document as `wf_region` structs.
   static void _writeRegions(
     Pointer<bindings.WfRegion> into,
     WaveformDocument document,
@@ -163,12 +169,13 @@ class FfiPlaybackSession implements PlaybackSession, Finalizable {
   bool _playing = false;
   bool _disposed = false;
 
-  /// The counters as they stood at [dispose], or null while alive.
+  /// The counters as they stood at [dispose], or null while the session is
+  /// alive.
   ///
-  /// The same treatment `FfiCaptureSession` gives its counters, and for the
-  /// same reason: reading one after the struct is freed would be a use after
-  /// free, and a query has a correct answer after disposal where a command does
-  /// not.
+  /// `FfiCaptureSession` gives its counters the same treatment, for the same
+  /// reason. A read of a counter after the code frees the struct is a use
+  /// after free. A query has a correct answer after disposal, and a command
+  /// does not.
   ({Duration position, int underruns})? _finalCounts;
 
   @override
@@ -260,12 +267,13 @@ class FfiPlaybackSession implements PlaybackSession, Finalizable {
     }
   }
 
-  /// Pulls frames the way the device callback does, and returns what it got.
+  /// Pulls frames in the same way as the device callback, and returns the
+  /// frames that it got.
   ///
-  /// The audio-thread entry point, driven by hand. This is why the realtime
-  /// path is testable on every platform with no sound card, and it is the same
-  /// code a real speaker drives - the same bargain `feedSynthetic` makes for
-  /// capture.
+  /// This method is the audio-thread entry point, under manual control. A test
+  /// can therefore run the realtime path on every platform with no sound card.
+  /// A real speaker drives the same code. `feedSynthetic` makes the same
+  /// bargain for capture.
   Int16List pullSynthetic(int frames) {
     _assertUsable();
 
@@ -279,7 +287,7 @@ class FfiPlaybackSession implements PlaybackSession, Finalizable {
     }
   }
 
-  /// Frames the ring is holding. Test and diagnostic use.
+  /// Frames that the ring holds. For test and diagnostic use.
   int get buffered => bindings.wfPlaybackAvailable(_playback);
 
   @override

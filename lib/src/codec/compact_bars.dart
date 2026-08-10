@@ -4,35 +4,37 @@ import 'dart:typed_data';
 
 import '../model/waveform_peaks.dart';
 
-/// How bar heights are derived from sample amplitude.
+/// How this codec derives bar heights from sample amplitude.
 enum BarScale {
-  /// Amplitude straight through. Technically honest, and almost always the
-  /// wrong picture: normal speech peaks well below full scale, so a linear
-  /// waveform of a voice note looks nearly flat.
+  /// Amplitude straight through. This is technically honest, and it is almost
+  /// always the wrong picture. Normal speech peaks at much less than full
+  /// scale, so a linear waveform of a voice note looks nearly flat.
   linear,
 
-  /// Decibels relative to full scale, floored. Matches how loudness is
-  /// perceived and is what makes a voice note legible. The default.
+  /// Decibels relative to full scale, with a floor. This matches how a user
+  /// hears loudness, and it is what makes a voice note legible. This is the
+  /// default.
   dbfs,
 }
 
 /// A fixed-width bar summary, small enough to store beside a message.
 ///
-/// This is the whole voice-note strategy in one class. The sender computes bars
-/// at record time and uploads roughly 64 bytes of metadata with the audio; the
-/// receiver draws directly from those bytes with no decoder, no native code and
-/// no waiting. It is what WhatsApp, Telegram and Signal do, and it removes the
-/// entire decode path from the common case.
+/// This class is the whole voice-note strategy. The sender computes bars at
+/// record time and uploads approximately 64 bytes of metadata with the audio.
+/// The receiver draws directly from those bytes, with no decoder, no native
+/// code and no delay. WhatsApp, Telegram and Signal do the same, and this
+/// removes the full decode path from the common case.
 ///
-/// Bars are `uint8`, so one bar is one byte and a 64-bar summary base64s to 88
-/// characters.
+/// A bar is a `uint8`, so one bar is one byte. A 64-bar summary is 88
+/// characters in base64.
 abstract final class CompactBars {
   /// Bars in a default summary. Enough detail for a chat bubble at any width.
   static const defaultBars = 64;
 
   /// Default silence floor for [BarScale.dbfs], in decibels.
   ///
-  /// -45 dB suits speech. Music wants a lower floor; a noisy room wants higher.
+  /// -45 dB suits speech. Music needs a lower floor. A noisy room needs a
+  /// higher floor.
   static const defaultFloorDb = -45.0;
 
   static const _fullScale = 32768.0;
@@ -40,9 +42,10 @@ abstract final class CompactBars {
 
   /// Summarizes [peaks] into [bars] bytes.
   ///
-  /// With [normalize] set, the loudest bar becomes full height, so a quietly
-  /// recorded note still reads clearly. Turn it off when several waveforms are
-  /// shown together and their relative loudness carries meaning.
+  /// If [normalize] is true, the loudest bar becomes full height. As a result,
+  /// a quietly recorded note still reads clearly. When a host shows several
+  /// waveforms together and their relative loudness carries meaning, set
+  /// [normalize] to false.
   static Uint8List encode(
     WaveformPeaks peaks, {
     int bars = defaultBars,
@@ -85,9 +88,9 @@ abstract final class CompactBars {
 
   /// Summarizes a stream of already-normalized amplitudes into [bars] bytes.
   ///
-  /// This is the live-capture path: a recorder emits one amplitude per hop, and
-  /// this folds however many arrived into a fixed-width summary at the end.
-  /// Values outside 0 to 1 are clamped.
+  /// This is the live-capture path. A recorder emits one amplitude per hop. At
+  /// the end, this method folds all the amplitudes that arrived into a
+  /// fixed-width summary. It clamps values outside 0 to 1.
   static Uint8List fromAmplitudes(
     List<double> amplitudes, {
     int bars = defaultBars,
@@ -133,10 +136,10 @@ abstract final class CompactBars {
     return out;
   }
 
-  /// Base64 for storing bars in a JSON document beside a message.
+  /// Base64, for storage of bars in a JSON document beside a message.
   static String toBase64(Uint8List bars) => base64Encode(bars);
 
-  /// Reads bars back out of [encoded].
+  /// Reads bars back from [encoded].
   static Uint8List fromBase64(String encoded) => base64Decode(encoded);
 
   static Uint8List _quantize(

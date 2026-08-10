@@ -10,18 +10,23 @@ import '../native/monowave_bindings.dart' as bindings;
 import 'capture_scope.dart';
 import 'capture_session.dart';
 
-/// A capture session backed by miniaudio, drained over FFI.
+/// A capture session on miniaudio, which this side drains over FFI.
 ///
-/// Nothing here runs on the audio thread. The audio thread's whole job is in C:
-/// accumulate a hop, reduce it, publish it to a lock-free ring. This side wakes
-/// on a timer and moves whatever accumulated into Dart.
+/// No code here runs on the audio thread. The whole job of the audio thread is
+/// in C. That code accumulates a hop, reduces it, and publishes it to a
+/// lock-free ring. This side wakes on a timer and moves the accumulated frames
+/// into Dart.
 ///
-/// **Call [dispose] when finished.** A [NativeFinalizer] destroys a session that
-/// is collected without one, so dropping a session cannot leave the microphone
-/// open indefinitely - but that is a backstop, not a substitute. It runs
-/// whenever the collector happens to get to the object, which may be long after
-/// the recording ended and is not guaranteed to happen at all before the process
-/// exits. Nothing else releases the device promptly.
+/// **Call [dispose] when you are finished.** A [NativeFinalizer] runs
+/// `wf_capture_destroy` on a session that the garbage collector collects
+/// without a call to [dispose]. Therefore, an abandoned session cannot keep
+/// the microphone open indefinitely. The finalizer is a backstop and not a
+/// substitute.
+///
+/// When the collector reaches the object, the finalizer runs. That moment can
+/// be long after the recording ended. Nothing guarantees that the finalizer
+/// runs at all before the process exits. No other mechanism releases the
+/// device promptly.
 class FfiCaptureSession implements CaptureSession, Finalizable {
   FfiCaptureSession._(
     Pointer<bindings.WfCapture> capture,
@@ -39,12 +44,14 @@ class FfiCaptureSession implements CaptureSession, Finalizable {
     _finalizer.attach(this, capture.cast(), detach: this);
   }
 
-  /// Destroys a session that was dropped without [dispose].
+  /// Runs `wf_capture_destroy` on a session that the garbage collector
+  /// collects without a call to [dispose].
   ///
-  /// `wf_capture_destroy` stops the device before freeing anything, so this
-  /// reclaims the input device as well as the struct, both rings, the take
-  /// history and the two drain buffers. Everything a session owns hangs off
-  /// that one pointer, which is why the drain buffers live in C.
+  /// `wf_capture_destroy` stops the device before it frees memory. Therefore,
+  /// this finalizer reclaims the input device, the struct, both rings, the
+  /// take history and the two drain buffers. One pointer owns all the
+  /// resources of a session. That is the reason why the drain buffers are in
+  /// C.
   static final _finalizer = NativeFinalizer(bindings.wfCaptureDestroyAddress);
 
   static Future<FfiCaptureSession> open(CaptureConfig config) async {
@@ -94,12 +101,15 @@ class FfiCaptureSession implements CaptureSession, Finalizable {
 
   final Pointer<bindings.WfCapture> _capture;
 
-  /// Frames moved per wake-up, and where they land. At the default hop, 16 ms
-  /// produces one or two, so the buffer is headroom for a stalled consumer.
+  /// Frames that each wake-up moves, and the buffer that receives them.
+  ///
+  /// At the default hop, 16 ms produces one or two frames. Therefore, the
+  /// buffer is headroom for a consumer that stalls.
   final Pointer<bindings.WfFrame> _drainBuffer;
   final int _drainBatch;
 
-  /// The same for raw audio, or `nullptr` and zero when none is kept.
+  /// The same two values for raw audio. If the session keeps no audio, they
+  /// are `nullptr` and zero.
   final Pointer<Int16> _pcmBuffer;
   final int _pcmBatch;
 
@@ -133,14 +143,17 @@ class FfiCaptureSession implements CaptureSession, Finalizable {
   /// The counters as they stood at [dispose], or null while the session is
   /// still alive.
   ///
-  /// The four getters below read straight out of the C struct, and [dispose]
-  /// frees it - so without this they would read freed memory rather than throw.
-  /// Freezing rather than throwing, unlike every other member here: a counter is
-  /// a query with a correct answer after disposal, where `start` or `stop` have
-  /// nothing meaningful left to do. It also keeps this in step with
-  /// `FakeCaptureSession`, which answers the same four after disposal, so a UI
-  /// reading a counter while it tears down behaves the same in a widget test as
-  /// it does in production.
+  /// The four getters that follow read directly from the C struct, and
+  /// [dispose] frees that struct. Without this field, those getters read freed
+  /// memory and do not throw. This member freezes its value and does not
+  /// throw, unlike every other member here. A counter is a query with a
+  /// correct answer after disposal. `start` or `stop` have no useful work left
+  /// after disposal.
+  ///
+  /// This behavior also keeps the class in step with `FakeCaptureSession`,
+  /// which answers the same four getters after disposal. Therefore, a UI that
+  /// reads a counter during teardown behaves the same in a widget test as in
+  /// production.
   ({int produced, int dropped, int pcmDropped, bool truncated})? _finalCounts;
 
   @override
@@ -183,16 +196,21 @@ class FfiCaptureSession implements CaptureSession, Finalizable {
 
   /// A periodic tick that does not keep the session alive.
   ///
-  /// `(_) => drain()` would capture `this`, and a pending timer is a GC root, so
-  /// a session dropped mid-recording would stay reachable for as long as it kept
-  /// ticking - forever - and the finalizer would never run. That is precisely
-  /// the case where a leak matters most, because the device is still open.
-  /// Holding the session weakly instead means a dropped one is collected, the
-  /// next tick finds nothing and cancels itself, and `wf_capture_destroy` closes
-  /// the microphone.
+  /// A closure of the form `(_) => drain()` captures `this`, and a pending
+  /// timer is a GC root. The caller can release its last reference to a
+  /// session in the middle of a recording. That session then stays reachable
+  /// for as long as the timer ticks. The timer ticks forever, and the
+  /// finalizer never runs. A leak matters most in this case, because the
+  /// device is still open.
   ///
-  /// Static, and taking the reference already made, so that no strong reference
-  /// to the session is ever in scope for the closure to capture by accident.
+  /// A weak hold on the session gives a different result. The garbage
+  /// collector collects a session with no other references. The next tick
+  /// finds nothing and cancels itself. Then `wf_capture_destroy` closes the
+  /// microphone.
+  ///
+  /// This method is static, and it takes a reference that the caller already
+  /// made. Therefore, no strong reference to the session is ever in scope, and
+  /// the closure cannot capture one by accident.
   static void Function(Timer) _drainWeakly(
     WeakReference<FfiCaptureSession> reference,
   ) => (timer) {
@@ -228,10 +246,12 @@ class FfiCaptureSession implements CaptureSession, Finalizable {
     _paused = false;
   }
 
-  /// Moves whatever the audio thread has published into [scope] and [frames].
+  /// Moves the frames that the audio thread published into [scope] and
+  /// [frames].
   ///
-  /// Public because a host driving its own ticker should drive this rather than
-  /// run a second timer alongside the built-in one.
+  /// This method is public. A host with its own ticker can drive this method
+  /// from that ticker. A second timer next to the built-in one is then not
+  /// necessary.
   int drain() {
     if (_disposed) return 0;
 
@@ -247,7 +267,8 @@ class FfiCaptureSession implements CaptureSession, Finalizable {
     return moved;
   }
 
-  /// Moves whatever audio accumulated into the file, if one was requested.
+  /// If the caller asked for a file, this method moves the accumulated audio
+  /// into that file.
   void _drainPcm() {
     final sink = _sink;
     if (sink == null || _pcmBuffer == nullptr) return;
@@ -295,20 +316,23 @@ class FfiCaptureSession implements CaptureSession, Finalizable {
     }
   }
 
-  /// Writes the real sizes into the WAV header and closes the file, once.
+  /// Writes the real sizes into the WAV header and closes the file, one time.
   ///
-  /// Both [stop] and [dispose] need this. [stop] finishes a take with it;
-  /// [dispose] uses it so that abandoning one leaves a file a player can open
-  /// rather than an open handle and a header still claiming zero length. The
-  /// audio was already on disk in both cases - only the header was wrong.
+  /// Both [stop] and [dispose] need this method. [stop] uses it to finish a
+  /// take. [dispose] uses it so that an abandoned take leaves a file that a
+  /// player can open. Without this method, the take leaves an open handle and
+  /// a header that still claims zero length. In both cases the audio was
+  /// already on disk, and only the header was wrong.
   ///
-  /// Idempotent, because closing a [RandomAccessFile] twice throws and
-  /// `stop()` followed by `dispose()` is the ordinary way to end a recording.
+  /// This method is idempotent for two reasons. A second close of a
+  /// [RandomAccessFile] throws. A call to `stop()` and then `dispose()` is the
+  /// ordinary way to end a recording.
   ///
-  /// What it deliberately does not do is drain: whatever the audio thread has
-  /// published since the last pass stays in the ring and is lost. Finishing a
-  /// take is [stop]'s job, and a caller who wanted those samples would have
-  /// called it - this only keeps an abandoned file from being corrupt.
+  /// This method deliberately does not drain. The frames that the audio thread
+  /// published since the last pass stay in the ring, and they are lost. To
+  /// finish a take is the job of [stop], and a caller that wants those samples
+  /// calls [stop] instead. This method only keeps an abandoned file from
+  /// corruption.
   Future<void> _closeSink() async {
     final sink = _sink;
     if (sink == null || _sinkClosed) return;
@@ -323,10 +347,11 @@ class FfiCaptureSession implements CaptureSession, Finalizable {
 
   /// Drives the audio-thread path with synthetic interleaved PCM.
   ///
-  /// This is the same entry point the device callback uses, so a test exercises
-  /// the real reduction, the real ring and the real history buffer - just
-  /// without a microphone or a permission prompt. It is why the realtime path
-  /// is testable in CI on every platform.
+  /// This method is the same entry point that the device callback uses.
+  /// Therefore, a test exercises the real reduction, the real ring and the
+  /// real history buffer, with no microphone and no permission prompt. This
+  /// method is the reason why CI can run tests for the realtime path on every
+  /// platform.
   void feedSynthetic(Int16List interleaved) {
     _assertUsable();
 
@@ -386,8 +411,9 @@ class FfiCaptureSession implements CaptureSession, Finalizable {
 
 /// A canonical 44-byte PCM WAV header.
 ///
-/// Written twice: once with zero length so the audio starts at a fixed offset,
-/// and once at stop with the real sizes.
+/// The session writes this header two times. The first write gives a zero
+/// length, so that the audio starts at a fixed offset. The second write, at
+/// stop, gives the real sizes.
 Uint8List _wavHeader(CaptureConfig config, int samples) {
   final dataBytes = samples * 2;
   final out = Uint8List(44);
@@ -418,7 +444,7 @@ Uint8List _wavHeader(CaptureConfig config, int samples) {
   return out;
 }
 
-/// Wraps a native pyramid as views, the same way a decode does.
+/// Wraps a native pyramid as views, in the same way as a decode.
 WaveformPeaks _wrapPeaks(Pointer<bindings.WfPeaks> pointer) {
   final levels = <Int16List>[
     for (var level = 0; level < bindings.wfPeaksLevels(pointer); level++)

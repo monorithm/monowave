@@ -1,232 +1,264 @@
 # Changelog
 
-All notable changes to monowave are documented here. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
-follows [semantic versioning](https://semver.org/spec/v2.0.0.html).
+This file records all notable changes to monowave. The file uses the format of
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The project uses
+[semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-0.3.0 is the first version published to pub.dev. 0.1.0 through 0.2.0 were
-development milestones, kept here because what changed in them is still the
+0.3.0 is the first version on pub.dev. 0.1.0 through 0.2.0 were development
+milestones. This file keeps them, because what changed in them is still the
 history of this API.
 
 ## 0.4.0
 
-Monowave can play what it edits. An edit is rendered by the same C loop the
-exporter runs, so what you hear before committing to a trim is what the export
-writes afterwards - byte for byte, on all six targets.
+monowave can play what it edits. The same C loop that the exporter runs also
+renders an edit. Therefore what you hear before you commit to a trim is what
+the export writes afterwards, byte for byte, on all six targets.
 
-### Breaking for anyone implementing `MonowavePlatform`
+### Breaking change for a host that implements `MonowavePlatform`
 
-The seam gained four members: `renderPcm`, `renderPcmBytes`, `openPlayback` and
-`openPlaybackBytes`. Calling code is unaffected, and a host using
-`FakeMonowavePlatform` is unaffected, because the fake implements them. A host
-that implements the interface itself has four methods to add.
+Version 0.4.0 adds four members to the seam: `renderPcm`, `renderPcmBytes`,
+`openPlayback` and `openPlaybackBytes`. The change does not affect code that
+calls monowave. It also does not affect a host that uses
+`FakeMonowavePlatform`, because the fake implements the four members. A host
+that implements the interface itself must add the four methods.
 
-### Added: an edit can be rendered without writing a file
+### Added: monowave can render an edit without a file
 
 `MonowavePlatform.renderPcm` returns a document as 16-bit PCM. The samples are
-byte-identical to what `exportWav` writes for the same document, and that is the
-point rather than a happy accident. Hearing an edit before committing to it is
-only useful when what you hear is what you get.
+byte-identical to what `exportWav` writes for the same document. This equality
+is deliberate rather than accidental. You can hear an edit before you commit to
+it. Such a preview is useful only when what you hear is what you get.
 
-Equality is structural rather than tested into place. `wf_export_wav` is now a
-file sink over a new `wf_render`, so the exporter and the renderer run one loop.
-There is no second implementation to drift.
+The equality is structural. No test holds it in place. `wf_export_wav` is now a
+file sink over a new `wf_render`, so the exporter and the renderer run one
+loop. There is no second implementation that can drift.
 
 The corpus behind that claim is the set of shapes that break a naive
-extraction: a zero-length region, a negative-length region, fades longer than
-the region that holds them, a gain of exactly 1.0, a gain that clamps, a region
-running past the end of the source, and a region length that neither block size
-divides. The renderer reads in 1000-frame blocks and the exporter in 4096, and
-the output still has to match. It can only match because the fade envelope
-depends on the position inside its region rather than on where a block boundary
-falls.
+extraction:
 
-- `wf_envelope` is exported rather than `static`, so the curve the exporter, the
-  renderer and a future web implementation share is one symbol. It also gets the
-  property tests it never had: exactly 0 and exactly 1 at the endpoints, linear
-  in between, overlapping fades that multiply, and never a negative multiplier.
+- a zero-length region
+- a negative-length region
+- fades that are longer than the region that holds them
+- a gain of exactly 1.0
+- a gain that clamps
+- a region that goes past the end of the source
+- a region length that neither block size divides
+
+The renderer reads in 1000-frame blocks, and the exporter reads in 4096-frame
+blocks. The output must still match. It can match only because the fade
+envelope depends on the position inside its region, not on the position of a
+block boundary.
+
+- `wf_envelope` is now an exported symbol rather than a `static` one. Therefore
+  the exporter, the renderer and a future web implementation share one symbol
+  for the curve. It also has the property tests that it never had. The tests
+  assert these properties:
+  - The envelope is exactly 0 and exactly 1 at the endpoints.
+  - The envelope is linear between the endpoints.
+  - Two fades that overlap multiply together.
+  - The multiplier is never negative.
 - `FakeMonowavePlatform.renderPcm` records every request and answers with
   silence of the right length, so a host can assert on the request without
-  synthesizing audio.
-- Not available on web, which has no filesystem to read a source from.
+  synthetic audio.
+- `renderPcm` is not available on web, because web has no filesystem to read a
+  source from.
 
-This is M6 of the playback work. `PlaybackSession` and an audio device arrive in
-M7 and M8. See [ROADMAP.md](ROADMAP.md).
+This is M6 of the playback work. `PlaybackSession` and an audio device arrive
+in M7 and M8. [ROADMAP.md](ROADMAP.md) has more information.
 
-### Added: a document can be fed to an audio device
+### Added: monowave can feed a document to an audio device
 
 `wf_playback` puts the M6 renderer behind a lock-free SPSC ring and a feeder
 thread, and hands the result to a miniaudio output device. It is the capture
-pipeline pointed the other way, and it obeys the same rule: the audio callback
-copies out of a ring and does nothing else. No allocation, no lock, no call into
-Dart.
+pipeline in the opposite direction, and it obeys the same rule. The audio
+callback copies from a ring and does nothing else. The callback does not
+allocate memory, does not take a lock, and does not call into Dart.
 
-The feeder is a C thread rather than a timer on the Dart side. Capture tolerates
-a late drain because its ring holds seconds and a stalled consumer loses
-nothing. Playback does not - an empty ring is silence in the speaker, and one
-garbage collection would be an audible dropout.
+The feeder is a C thread rather than a timer on the Dart side. Capture
+tolerates a late drain, because its ring holds seconds and a stalled consumer
+loses nothing. Playback does not tolerate a late drain. An empty ring is
+silence in the speaker. With a timer on the Dart side, one garbage collection
+makes an audible dropout.
 
-Underruns are counted rather than hidden, the way `CaptureSession.dropped` is.
-Silence past the end of the render is the end rather than a fault, and the
-counter knows the difference.
+The session counts underruns rather than hides them, in the same way as
+`CaptureSession.dropped`. Silence past the end of the render is the end of the
+render rather than a fault. The counter knows this difference.
 
-`wf_playback_pull` is public for the same reason `wf_capture_feed` is: it is the
-audio-thread entry point, so the realtime path is testable on every platform
-with no sound card. The test drives 30 seconds of an edited document through the
-ring and asserts the result is byte-identical to what M6 renders offline, with
-zero underruns.
+`wf_playback_pull` is public for the same reason as `wf_capture_feed`. It is
+the audio-thread entry point, so a test can drive the realtime path on every
+platform with no sound card. The test drives 30 seconds of an edited document
+through the ring. The test then asserts that the result is byte-identical to
+what M6 renders offline, with zero underruns.
 
-This is M7. `PlaybackSession`, seeking and a position clock arrive in M8; see
-[ROADMAP.md](ROADMAP.md).
+This is M7. `PlaybackSession`, a seek and a position clock arrive in M8.
+[ROADMAP.md](ROADMAP.md) has more information.
 
-- **`src/wf_playback.c` carries the first per-platform code in the package**, a
-  thread, a join and a sleep behind `#if defined(_WIN32)`. miniaudio keeps its
-  own thread abstraction private - `ma_thread_create` is `static` - and
-  vendoring a second threading library for three functions was the worse trade.
-- Not in the WASM build. Playback reads through the path-based decoders that
-  build compiles out, and a single-threaded module has nowhere to put a feeder.
+- **`src/wf_playback.c` carries the first per-platform code in the package.**
+  The code is a thread, a join and a sleep behind `#if defined(_WIN32)`.
+  miniaudio keeps its own thread abstraction private (`ma_thread_create` is
+  `static`). A second vendored threading library for three functions was the
+  worse trade.
+- Playback is not in the WASM build. Playback reads through the path-based
+  decoders that this build compiles out, and a single-threaded module has
+  nowhere to put a feeder.
 
 ### Added: `PlaybackSession`, with a seek and a playhead
 
-`MonowavePlatform.openPlayback` hands back a `PlaybackSession`: `play`, `pause`,
-`seek`, `position`, `duration`, `isPlaying`, `isFinished` and `underruns`. It is
-the mirror of `CaptureSession`, and what it plays is byte-identical to what
-`exportWav` would write for the same document.
+`MonowavePlatform.openPlayback` returns a `PlaybackSession`: `play`, `pause`,
+`seek`, `position`, `duration`, `isPlaying`, `isFinished` and `underruns`. It
+is the mirror of `CaptureSession`, and what it plays is byte-identical to what
+`exportWav` writes for the same document.
 
-**The playhead is the device, not a timer.** `position` is read from the frames
-the device has actually consumed. A timer drifts against the audio clock
-immediately, and the playhead then sits where the sound is not - which is what
-the example's `DemoPlayer` does, correctly for a fake and wrongly for anything
-real. A test asserts the playhead does not move while nothing is consumed.
+**The playhead is the device, not a timer.** `position` comes from the frames
+that the device actually consumed. A timer drifts against the audio clock
+immediately, and the playhead then sits where the sound is not. The
+`DemoPlayer` in the example does this, correctly for a fake and wrongly for
+anything real. A test asserts that the playhead does not move while the device
+consumes nothing.
 
-**A seek is a handshake.** Flushing a ring that a feeder is filling and a device
-is draining cannot be done by either of them, because neither may block. So
-`wf_playback_seek` blocks its own caller instead, waits for the consumer to
-leave the audio callback and the feeder to park, and only then resets the ring.
-The device hears a few milliseconds of silence, which is the right sound for a
-seek. Accuracy is the decoder's: sample-exact on WAV, and about 26 ms on MP3,
-which lands on a frame boundary and then decodes forward.
+**A seek is a handshake.** A feeder fills the ring and a device drains it.
+Neither of them can flush the ring, because neither of them can block.
+Therefore `wf_playback_seek` blocks its own caller instead. It waits for the
+consumer to leave the audio callback and for the feeder to park. It resets the
+ring only after both of these events.
 
-`PlaybackSession` deliberately does not implement `MonoPlaybackController`. That
-interface lives in monokit, and a headless package must not depend on the design
-system, so the adapter stays the few lines a host writes.
+The device receives a few milliseconds of silence, and that is the right sound
+for a seek. The accuracy of a seek is the accuracy of the decoder. A seek is
+sample-exact on WAV. On MP3 a seek is accurate to approximately 26 ms. The seek
+goes to a frame boundary and then decodes forward.
 
-- `FakePlaybackSession` in `package:monowave/testing.dart`. A test asserts it
-  and the real session agree on the shared contract, including clamping a seek
-  past the end and answering counters after disposal, so a host cannot build a
-  scrubber against the fake and then meet a different contract on a device.
-- `FfiPlaybackSession` carries a `NativeFinalizer` from the start. A dropped
-  session gives back the output device and the feeder thread without waiting for
-  the process to exit.
+`PlaybackSession` deliberately does not implement `MonoPlaybackController`.
+That interface lives in monokit, and a headless package must not depend on the
+design system. Therefore the adapter stays the few lines that a host writes.
 
-This is M8. Live document updates are M9 and web playback is M10; see
-[ROADMAP.md](ROADMAP.md).
+- `package:monowave/testing.dart` now has `FakePlaybackSession`. A test asserts
+  that the fake and the real session agree on the shared contract. The contract
+  includes a seek past the end, which both clamp, and counters, which both
+  answer after disposal. Therefore a host cannot build a scrubber against the
+  fake and then meet a different contract on a device.
+- `FfiPlaybackSession` carries a `NativeFinalizer` from the start. A discarded
+  session releases the output device and the feeder thread. It does not wait
+  for the process to exit.
 
-### Added: swap a document while it plays
+This is M8. Live document updates are M9, and web playback is M10.
+[ROADMAP.md](ROADMAP.md) has more information.
 
-`PlaybackSession.setDocument` replaces the region list underneath a running
-session. Drag a trim handle, change a gain, and hear the result without playback
-stopping. This is the feature the whole playback path exists for.
+### Added: monowave can swap a document while it plays
 
-The playhead keeps its position in the output timeline, so the sound carries on
-from where it was rather than jumping, and a change that shortens the document
-below the playhead clamps to the new end. A host that wants different behaviour
-calls `seek` straight after.
+`PlaybackSession.setDocument` replaces the region list of a session while the
+session runs. A user can drag a trim handle or change a gain, and hear the
+result while playback continues. This is the feature that the whole playback
+path exists for.
 
-**One call rather than two.** The roadmap left open whether a gain change and a
-trim should be separate entry points, on the theory that the first is cheaper.
-It is not: both discard whatever the ring had queued, because those frames were
-rendered through the old document, and the ring holds about a second. A second
-entry point would buy a caller nothing but a decision to get wrong.
+The playhead keeps its position in the output timeline. Therefore the sound
+continues from that position and does not jump. If a change makes the document
+shorter than the playhead position, the playhead clamps to the new end. A host
+that wants different behavior calls `seek` immediately after the swap.
 
-Mechanically a swap is a seek with a new region list, so it reuses the seek
-handshake from M8 unchanged.
+**One call rather than two.** The roadmap did not decide whether a gain change
+and a trim must be separate entry points. The theory was that a gain change is
+cheaper, but it is not. Both operations erase the frames in the ring, because
+the renderer made those frames from the old document. The ring holds
+approximately one second. A second entry point gives a host nothing except one
+more decision to get wrong.
 
-- `FakePlaybackSession.setDocument` records every swap and clamps the same way,
-  and a test asserts the two agree.
-- A rejected swap leaves the old document playing. The new list is copied in C
-  before the old one is released, so a failed allocation changes nothing.
+Mechanically, a swap is a seek with a new region list. Therefore it reuses the
+seek handshake from M8 unchanged.
 
-This is M9. Web playback is M10; see [ROADMAP.md](ROADMAP.md).
+- `FakePlaybackSession.setDocument` records every swap and clamps in the same
+  way, and a test asserts that the two agree.
+- After a rejected swap, the old document continues to play. C copies the new
+  list before it releases the old list, so a failed allocation changes nothing.
+
+This is M9. Web playback is M10. [ROADMAP.md](ROADMAP.md) has more information.
 
 ### Added: web renders through the same C loop, byte for byte
 
-`MonowavePlatform.renderPcmBytes` renders a document from bytes already in
-memory. It is the render path on every target, and the only one on web, which
-has no filesystem.
+`MonowavePlatform.renderPcmBytes` renders a document from bytes that are
+already in memory. It is the render path on every target. It is the only render
+path on web, because web has no filesystem.
 
 **The roadmap expected this to cost the equality guarantee. It did not.** The
-plan was to decode through the browser and apply the envelope in an
-AudioWorklet, which would have left MP3 approximate on web, since Chrome's
-decoder is not `dr_mp3`. That concession is withdrawn. `DR_WAV_NO_STDIO` and its
-siblings remove only the *file* entry points, so the WASM build already carried
-all three decoders with their memory APIs - `wf_decode_memory` has always used
-them. Web now runs the same render loop as the exporter, over the same decoders.
+plan was to decode through the browser and to apply the envelope in an
+AudioWorklet. That plan leaves MP3 approximate on web, because the decoder of
+Chrome is not `dr_mp3`. Version 0.4.0 withdraws that concession.
+
+`DR_WAV_NO_STDIO` and its siblings remove only the *file* entry points.
+Therefore the WASM build already carried all three decoders with their memory
+APIs, and `wf_decode_memory` always used them. Web now runs the same render
+loop as the exporter, over the same decoders.
 
 A rendered document is byte-identical on all six targets, for every format.
 
-`tool/verify_wasm.mjs` asserts it. It renders a document through the WASM module
-and compares every sample against a native render. Changing the int16
+`tool/verify_wasm.mjs` asserts it. It renders a document through the WASM
+module and compares every sample against a native render. A change of the int16
 conversion from truncation to rounding fails that check at sample 1.
 
-- Only `wf_source_open` and `wf_export_wav` sit behind the stdio guard now. The
-  source layer, the region walk, the envelope and the render loop are shared.
-- `wf_region_stride` is exported, so a binding that lays the array out by hand -
-  the web one writes into the WASM heap - asks rather than guesses.
-- The bytes are copied into the render. dr_libs reference a caller's buffer
-  rather than copying it, and a render outlives the call that made it.
+- Only `wf_source_open` and `wf_export_wav` sit behind the stdio guard now. All
+  targets share the source layer, the region walk, the envelope and the render
+  loop.
+- `wf_region_stride` is now an exported symbol. Therefore a binding that builds
+  the array by hand (the web binding writes into the WASM heap) asks for the
+  stride rather than guesses it.
+- monowave copies the bytes into the render. dr_libs reference the buffer of
+  the caller rather than copy it, and a render outlives the call that made it.
 
-Still missing on web: an audio device. `openPlayback` throws there. The hard
-half is done, since web can produce exactly the right samples, and what remains
-is a WebAudio graph to play them, which needs no C.
+An audio device is still missing on web. `openPlayback` throws there. The
+difficult half is complete, because web can produce exactly the right samples.
+What remains is a WebAudio graph to play them, and that graph needs no C.
 
-This is M10. See [ROADMAP.md](ROADMAP.md).
+This is M10. [ROADMAP.md](ROADMAP.md) has more information.
 
 ### Added: playback on web
 
 `MonowavePlatform.openPlaybackBytes` returns a `PlaybackSession` on all six
-targets. Web has no filesystem, so bytes are the way in there; on native it is
-the same engine as `openPlayback`, reading from a copy rather than streaming a
-file.
+targets. Web has no filesystem, so bytes are the way in there. On native it is
+the same engine as `openPlayback`. The engine reads from a copy rather than
+streams a file.
 
-What plays is byte-identical to what `exportWav` would write, on every target,
-because every target renders through the same C loop. What differs is only the
-device underneath - miniaudio natively, a WebAudio graph on web.
+What plays is byte-identical to what `exportWav` writes on every target,
+because every target renders through the same C loop. Only the device is
+different. Native targets use miniaudio, and web uses a WebAudio graph.
 
-The web graph is deliberately plain: the whole render goes into an `AudioBuffer`
-up front and an `AudioBufferSourceNode` plays it. No ring and no feeder, because
-the browser owns the audio thread and there is nothing to race. Right for a
-preview of an edit, wrong for an audiobook - a long document costs its whole
-length in memory. `underruns` is always zero there, and that is a fact rather
-than a stub: with the render resident, a feeder cannot lose a race it is not in.
+The web graph is deliberately plain. The whole render goes into an
+`AudioBuffer` at the start, and an `AudioBufferSourceNode` plays it. There is
+no ring and no feeder, because the browser owns the audio thread and there is
+nothing to race. This design is correct for a preview of an edit and wrong for
+an audiobook. A long document costs its whole length in memory.
+
+`underruns` is always zero on web, and that is a fact rather than a stub. The
+render stays in memory, so a feeder cannot lose a race that it is not in.
 
 The playhead is still the audio clock. `AudioContext.currentTime` advances with
-the hardware, the same rule the native session follows by counting frames the
-device consumed.
+the hardware. The native session obeys the same rule, and counts the frames
+that the device consumed.
 
-**Browsers refuse to start an `AudioContext` without a user gesture**, and
-report it as a context stuck in `suspended` rather than as an error. `play()`
-detects that and throws `PlaybackUnavailable` saying to call it from a tap.
+**Browsers refuse to start an `AudioContext` without a user gesture.** A
+browser reports this as a context that stays in `suspended` rather than as an
+error. `play()` detects that state and throws `PlaybackUnavailable`. The error
+message tells the host to call `play()` from a tap.
 
-- `wf_playback_create_memory` is the native half, so a host holding audio in
+- `wf_playback_create_memory` is the native half, so a host that holds audio in
   memory does not have to write a temporary file to play it.
 - `openPlayback` with a path still throws on web.
 - The M7 to M9 transport does not port, by design. A browser has its own
-  scheduler; what crosses is the samples.
+  scheduler, and only the samples cross.
 
 ### Changed
 
-- **ABI 13 → 14.** Additive: `wf_playback_create_memory`.
-- **ABI 12 → 13.** Additive: `wf_render_open_memory` and `wf_region_stride`.
-- **ABI 11 → 12.** Additive: `wf_render_set_regions` and
+- **ABI 13 → 14.** The change is additive: `wf_playback_create_memory`.
+- **ABI 12 → 13.** The change is additive: `wf_render_open_memory` and
+  `wf_region_stride`.
+- **ABI 11 → 12.** The change is additive: `wf_render_set_regions` and
   `wf_playback_set_regions`.
-- **ABI 10 → 11.** Additive: `wf_render_seek` and `wf_playback_seek`.
-- **ABI 9 → 10.** Additive: the `wf_playback_*` surface. No existing signature
-  changed.
-- **ABI 8 → 9.** Additive: `wf_envelope`, `wf_render_open`, `wf_render_close`,
-  `wf_render_read`, `wf_render_sample_rate`, `wf_render_channels` and
-  `wf_render_length_frames`. No existing signature changed, and the determinism
-  digests do not move on either binding.
+- **ABI 10 → 11.** The change is additive: `wf_render_seek` and
+  `wf_playback_seek`.
+- **ABI 9 → 10.** The change is additive: the `wf_playback_*` surface. No
+  existing signature changed.
+- **ABI 8 → 9.** The change is additive: `wf_envelope`, `wf_render_open`,
+  `wf_render_close`, `wf_render_read`, `wf_render_sample_rate`,
+  `wf_render_channels` and `wf_render_length_frames`. No existing signature
+  changed, and the determinism digests do not move on either binding.
 
 ## 0.3.1
 
